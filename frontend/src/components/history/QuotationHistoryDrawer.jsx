@@ -1,75 +1,265 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Download, Copy, Trash2, RotateCcw, ChevronDown, FileText, Calendar, Hash } from 'lucide-react';
-import { getQuotationsByClient, deleteQuotation, duplicateQuotation } from '../../lib/db';
-import { generatePDF } from '../../lib/pdf';
-import { formatINR, calcAll } from '../../lib/calc';
-import useCalculatorStore from '../../store/calculatorStore';
+import { X, Copy, Trash2, Download, Package2 } from 'lucide-react';
 import useClientStore from '../../store/clientStore';
+import useCalculatorStore from '../../store/calculatorStore';
+import { calcAll, formatINR } from '../../lib/calc';
+import { generatePDF } from '../../lib/pdf';
 
-const QuotationCard = ({ quotation, onLoad, onDelete, onDuplicate, onExport }) => {
+/* ─── Helpers ─────────────────────────────────────────────────────── */
+const fmtDate = (str) => {
+  if (!str) return '—';
+  return new Date(str).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+/* ─── Pill Sort Button ────────────────────────────────────────────── */
+const SortPill = ({ label, active, onClick }) => (
+  <button
+    onClick={onClick}
+    style={{
+      fontSize: '11px',
+      fontFamily: "'DM Sans', sans-serif",
+      padding: '4px 12px',
+      borderRadius: '20px',
+      border: active ? '1px solid #C8956C' : '1px solid var(--color-border)',
+      background: active ? 'rgba(200,149,108,0.1)' : 'transparent',
+      color: active ? '#C8956C' : 'var(--color-text-secondary)',
+      cursor: 'pointer',
+      transition: 'all 150ms ease',
+      fontWeight: active ? 500 : 400,
+    }}
+    onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-1px)')}
+    onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+  >
+    {label}
+  </button>
+);
+
+/* ─── Toast ───────────────────────────────────────────────────────── */
+const InlineToast = ({ message }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 6 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0 }}
+    style={{
+      position: 'fixed',
+      bottom: '80px',
+      right: '440px',
+      background: '#1A1A1A',
+      color: 'white',
+      fontSize: '12px',
+      padding: '8px 16px',
+      borderRadius: '10px',
+      zIndex: 999999,
+      fontFamily: "'DM Sans', sans-serif",
+      pointerEvents: 'none',
+    }}
+  >
+    {message}
+  </motion.div>
+);
+
+/* ─── Quotation Card ──────────────────────────────────────────────── */
+const QuotationCard = ({ quotation: q, onLoad, onDuplicate, onExport, onDelete }) => {
+  const [hovered, setHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const calc = calcAll(quotation.state || {});
-  const date = new Date(quotation.updated_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const calc = calcAll(q.state || {});
+  const grandTotal = q.state?.grandTotal || calc.finalTotal || 0;
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="border border-[var(--border)] rounded-xl p-4 bg-[var(--surface)] hover:border-[var(--copper)] transition-all duration-200 group"
-      data-testid={`quotation-card-${quotation.id}`}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setConfirmDelete(false); }}
+      style={{
+        border: `1px solid ${hovered ? '#C8956C' : 'var(--color-border)'}`,
+        borderRadius: '14px',
+        padding: '16px',
+        marginBottom: '12px',
+        background: hovered ? 'rgba(200,149,108,0.03)' : 'var(--color-surface)',
+        transition: 'border-color 200ms ease, background 200ms ease',
+      }}
     >
-      <div className="flex items-start justify-between mb-2">
-        <div>
-          <h4 className="font-display font-semibold text-sm text-[var(--text-primary)]">{quotation.job_name || 'Untitled'}</h4>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-[var(--text-secondary)] flex items-center gap-1">
-              <Hash size={10} /> {quotation.quote_number}
+      {/* Top row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: "'Cormorant Garamond', serif",
+            fontSize: '16px',
+            fontWeight: 500,
+            color: 'var(--color-text-primary)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {q.job_name || 'Untitled'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+              {q.quote_number || '—'}{q.version > 1 ? ` · v${q.version}` : ''}
             </span>
-            <span className="text-xs bg-[var(--border)] text-[var(--text-secondary)] px-1.5 py-0.5 rounded">v{quotation.version}</span>
-            {quotation.is_repeat_order && (
-              <span className="text-xs bg-[var(--copper)] text-white px-1.5 py-0.5 rounded">Repeat</span>
+            {q.is_repeat_order && (
+              <span style={{
+                fontSize: '9px',
+                textTransform: 'uppercase',
+                background: '#C8956C',
+                color: 'white',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                letterSpacing: '0.05em',
+                fontFamily: "'DM Sans', sans-serif",
+                fontWeight: 600,
+              }}>
+                Repeat
+              </span>
             )}
           </div>
         </div>
+
+        {/* Trash */}
         {!confirmDelete ? (
           <button
-            onClick={() => setConfirmDelete(true)}
-            className="opacity-0 group-hover:opacity-100 text-[var(--text-secondary)] hover:text-red-500 transition-all p-1"
-            data-clickable data-testid={`delete-quote-${quotation.id}`}
+            onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+            style={{
+              opacity: hovered ? 1 : 0,
+              transition: 'opacity 150ms ease',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#EF4444',
+              padding: '2px',
+              display: 'flex',
+              alignItems: 'center',
+              flexShrink: 0,
+            }}
           >
             <Trash2 size={14} strokeWidth={1.5} />
           </button>
         ) : (
-          <div className="flex gap-1">
-            <button onClick={() => onDelete(quotation.id)} className="text-xs text-red-500 font-medium px-2 py-1 border border-red-300 rounded" data-clickable>Yes</button>
-            <button onClick={() => setConfirmDelete(false)} className="text-xs text-[var(--text-secondary)] px-2 py-1 border border-[var(--border)] rounded" data-clickable>No</button>
+          <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(q.id); }}
+              style={{ fontSize: '11px', color: '#EF4444', border: '1px solid #FCA5A5', borderRadius: '6px', padding: '2px 8px', background: 'none', cursor: 'pointer' }}
+            >
+              Yes
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+              style={{ fontSize: '11px', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '2px 8px', background: 'none', cursor: 'pointer' }}
+            >
+              No
+            </button>
           </div>
         )}
       </div>
 
-      <div className="flex items-center justify-between mb-3 text-xs">
-        <div className="flex items-center gap-1 text-[var(--text-secondary)]">
-          <Calendar size={11} />
-          <span>{date}</span>
+      {/* Middle row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+            Qty: {(q.state?.orderQty || 0).toLocaleString('en-IN')}
+          </span>
+          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+            {fmtDate(q.created_at)}{q.updated_at !== q.created_at ? ` · Updated ${fmtDate(q.updated_at)}` : ''}
+          </span>
         </div>
-        <span className="text-[var(--copper)] font-semibold tabular-nums">{formatINR(calc.finalTotal)}</span>
+        <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', fontWeight: 600, color: '#C8956C' }}>
+          {grandTotal > 0 ? formatINR(grandTotal) : '₹—'}
+        </span>
       </div>
 
-      <div className="text-xs text-[var(--text-secondary)] mb-3">
-        <span>Qty: {quotation.state?.orderQty || 0}</span>
-        <span className="mx-2">·</span>
-        <span>{quotation.state?.jobName || '—'}</span>
-      </div>
-
-      <div className="flex gap-1.5">
-        <button onClick={() => onLoad(quotation)} className="flex-1 text-xs py-1.5 bg-[var(--copper)] text-white rounded-lg font-medium shimmer-btn hover:-translate-y-0.5 transition-all" data-clickable data-testid={`load-quote-${quotation.id}`}>
+      {/* Action row */}
+      <div style={{
+        display: 'flex',
+        gap: '6px',
+        opacity: hovered ? 1 : 0,
+        transition: 'opacity 150ms ease',
+        pointerEvents: hovered ? 'auto' : 'none',
+      }}>
+        <button
+          onClick={(e) => { e.stopPropagation(); onLoad(q); }}
+          className="shimmer-btn"
+          style={{
+            flex: 1,
+            fontSize: '11px',
+            border: 'none',
+            color: 'white',
+            borderRadius: '8px',
+            padding: '6px 0',
+            background: 'linear-gradient(135deg, #C8956C 0%, #b8825c 100%)',
+            cursor: 'pointer',
+            fontFamily: "'DM Sans', sans-serif",
+            fontWeight: 500,
+            transition: 'transform 200ms ease, box-shadow 200ms ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 4px 16px rgba(200,149,108,0.4)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
           Load
         </button>
-        <button onClick={() => onDuplicate(quotation.id)} className="text-xs px-2.5 py-1.5 border border-[var(--border)] rounded-lg hover:border-[var(--copper)] transition-all" data-clickable title="Duplicate" data-testid={`dup-quote-${quotation.id}`}>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDuplicate(q.id); }}
+          title="Duplicate"
+          className="shimmer-btn"
+          style={{
+            fontSize: '11px',
+            border: '1px solid rgba(200,149,108,0.35)',
+            color: 'var(--color-text-secondary)',
+            borderRadius: '8px',
+            padding: '6px 10px',
+            background: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            transition: 'all 200ms ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#C8956C';
+            e.currentTarget.style.color = '#C8956C';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'rgba(200,149,108,0.35)';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
+            e.currentTarget.style.transform = 'translateY(0)';
+          }}
+        >
           <Copy size={12} strokeWidth={1.5} />
         </button>
-        <button onClick={() => onExport(quotation)} className="text-xs px-2.5 py-1.5 border border-[var(--border)] rounded-lg hover:border-[var(--copper)] transition-all" data-clickable title="Export PDF" data-testid={`export-quote-${quotation.id}`}>
+        <button
+          onClick={(e) => { e.stopPropagation(); onExport(q); }}
+          title="Export PDF"
+          className="shimmer-btn"
+          style={{
+            fontSize: '11px',
+            border: '1px solid rgba(200,149,108,0.35)',
+            color: 'var(--color-text-secondary)',
+            borderRadius: '8px',
+            padding: '6px 10px',
+            background: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            transition: 'all 200ms ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#C8956C';
+            e.currentTarget.style.color = '#C8956C';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'rgba(200,149,108,0.35)';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
+            e.currentTarget.style.transform = 'translateY(0)';
+          }}
+        >
           <Download size={12} strokeWidth={1.5} />
         </button>
       </div>
@@ -77,33 +267,37 @@ const QuotationCard = ({ quotation, onLoad, onDelete, onDuplicate, onExport }) =
   );
 };
 
+/* ─── Main Drawer ─────────────────────────────────────────────────── */
 const QuotationHistoryDrawer = ({ isOpen, onClose }) => {
-  const [quotations, setQuotations] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const {
+    selectedClient,
+    quotations,
+    isLoadingQuotations,
+    fetchQuotationsByClient,
+    loadQuotation,
+    duplicateQuotation,
+    deleteQuotation,
+  } = useClientStore();
+  const { isDirty } = useCalculatorStore();
+
   const [sort, setSort] = useState('newest');
-  const { selectedClient } = useClientStore();
-  const { loadState, isDirty, getSerializable } = useCalculatorStore();
-  const { setCurrentQuotation } = useClientStore();
   const [pendingLoad, setPendingLoad] = useState(null);
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
-    if (isOpen && selectedClient) loadQuotes();
+    if (isOpen && selectedClient) fetchQuotationsByClient(selectedClient.id);
   }, [isOpen, selectedClient]);
 
-  const loadQuotes = async () => {
-    if (!selectedClient) return;
-    setLoading(true);
-    try {
-      const data = await getQuotationsByClient(selectedClient.id);
-      setQuotations(data);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
   };
 
   const sorted = [...quotations].sort((a, b) => {
     if (sort === 'newest') return new Date(b.updated_at) - new Date(a.updated_at);
-    if (sort === 'value') return calcAll(b.state || {}).finalTotal - calcAll(a.state || {}).finalTotal;
-    return 0;
+    const aTotal = a.state?.grandTotal || calcAll(a.state || {}).finalTotal || 0;
+    const bTotal = b.state?.grandTotal || calcAll(b.state || {}).finalTotal || 0;
+    return bTotal - aTotal;
   });
 
   const handleLoad = (q) => {
@@ -112,98 +306,284 @@ const QuotationHistoryDrawer = ({ isOpen, onClose }) => {
   };
 
   const doLoad = (q) => {
-    loadState(q.state || {});
-    setCurrentQuotation(q);
+    loadQuotation(q);
     setPendingLoad(null);
     onClose();
   };
 
-  const handleDelete = async (id) => {
-    await deleteQuotation(id);
-    setQuotations(prev => prev.filter(q => q.id !== id));
+  const handleDuplicate = async (id) => {
+    await duplicateQuotation(id);
+    if (selectedClient) fetchQuotationsByClient(selectedClient.id);
+    showToast('Duplicate created');
   };
 
-  const handleDuplicate = async (id) => {
-    const copy = await duplicateQuotation(id);
-    setQuotations(prev => [copy, ...prev]);
+  const handleDelete = async (id) => {
+    await deleteQuotation(id);
   };
 
   const handleExport = (q) => generatePDF(q.state || {}, selectedClient);
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed right-0 top-0 h-full w-[420px] max-w-full z-50 bg-[var(--surface)] border-l border-[var(--border)] flex flex-col shadow-2xl"
-            data-testid="history-drawer"
-          >
-            <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--border)]">
-              <div>
-                <h3 className="font-display font-semibold text-[var(--text-primary)]">Quote History</h3>
-                <p className="text-xs text-[var(--text-secondary)] mt-0.5">{selectedClient?.name} · {quotations.length} quotes</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <select value={sort} onChange={e => setSort(e.target.value)} className="input-copper text-xs px-2 py-1.5 rounded-lg" data-testid="history-sort">
-                  <option value="newest">Newest First</option>
-                  <option value="value">Highest Value</option>
-                </select>
-                <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors" data-clickable data-testid="close-history">
-                  <X size={18} strokeWidth={1.5} className="text-[var(--text-secondary)]" />
-                </button>
-              </div>
-            </div>
+    <>
+      <AnimatePresence>
+        {toast && <InlineToast key="toast" message={toast} />}
+      </AnimatePresence>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-3">
-              {loading ? (
-                <div className="flex items-center justify-center py-12 text-[var(--text-secondary)]">
-                  <div className="w-6 h-6 border-2 border-[var(--copper)] border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : sorted.length === 0 ? (
-                <div className="text-center py-16 text-[var(--text-secondary)]">
-                  <FileText size={40} strokeWidth={1} className="mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">No quotations yet.</p>
-                  <p className="text-xs mt-1">Fill in the calculator and save your first quote.</p>
-                </div>
-              ) : (
-                sorted.map(q => (
-                  <QuotationCard
-                    key={q.id}
-                    quotation={q}
-                    onLoad={handleLoad}
-                    onDelete={handleDelete}
-                    onDuplicate={handleDuplicate}
-                    onExport={handleExport}
-                  />
-                ))
-              )}
-            </div>
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 50,
+                background: 'rgba(0,0,0,0.22)',
+                backdropFilter: 'blur(3px)',
+                WebkitBackdropFilter: 'blur(3px)',
+              }}
+              onClick={onClose}
+            />
 
-            {/* Unsaved changes confirm */}
-            <AnimatePresence>
-              {pendingLoad && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-                  className="absolute inset-x-0 bottom-0 bg-[var(--surface)] border-t border-[var(--border)] p-5 shadow-xl"
-                >
-                  <p className="text-sm font-medium text-[var(--text-primary)] mb-1">You have unsaved changes.</p>
-                  <p className="text-xs text-[var(--text-secondary)] mb-4">Load anyway? Your current work will be lost.</p>
-                  <div className="flex gap-3">
-                    <button onClick={() => doLoad(pendingLoad)} className="flex-1 py-2 text-sm bg-[var(--copper)] text-white rounded-lg font-medium" data-clickable>Load Anyway</button>
-                    <button onClick={() => setPendingLoad(null)} className="flex-1 py-2 text-sm border border-[var(--border)] rounded-lg" data-clickable>Cancel</button>
+            {/* Panel */}
+            <motion.div
+              key="panel"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 35 }}
+              style={{
+                position: 'fixed',
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: '420px',
+                maxWidth: '100vw',
+                zIndex: 51,
+                background: 'var(--color-surface)',
+                borderLeft: '1px solid var(--color-border)',
+                boxShadow: '-8px 0 40px rgba(0,0,0,0.12)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }}
+            >
+              {/* ── Header ── */}
+              <div style={{
+                padding: '20px 24px 16px',
+                borderBottom: '1px solid var(--color-border)',
+                flexShrink: 0,
+                background: 'var(--color-surface)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontFamily: "'Cormorant Garamond', serif",
+                        fontSize: '1.25rem',
+                        fontWeight: 500,
+                        color: 'var(--color-text-primary)',
+                        lineHeight: 1.2,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '200px',
+                      }}>
+                        {selectedClient?.name || 'Client'}
+                      </span>
+                      <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                        Quotations
+                      </span>
+                      <span style={{
+                        fontFamily: "'DM Sans', sans-serif",
+                        fontSize: '11px',
+                        background: 'rgba(200,149,108,0.12)',
+                        color: '#C8956C',
+                        padding: '2px 8px',
+                        borderRadius: '20px',
+                        fontWeight: 500,
+                      }}>
+                        {quotations.length}
+                      </span>
+                    </div>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+                  <button
+                    onClick={onClose}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--color-text-secondary)',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      borderRadius: '6px',
+                      flexShrink: 0,
+                      transition: 'all 200ms ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = 'var(--color-text-primary)';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = 'var(--color-text-secondary)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    <X size={18} strokeWidth={1.5} />
+                  </button>
+                </div>
+
+                {/* Sort pills */}
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <SortPill label="Newest" active={sort === 'newest'} onClick={() => setSort('newest')} />
+                  <SortPill label="Highest Value" active={sort === 'value'} onClick={() => setSort('value')} />
+                </div>
+              </div>
+
+              {/* ── Cards list ── */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 24px' }}>
+                {isLoadingQuotations ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      border: '2px solid rgba(200,149,108,0.25)',
+                      borderTopColor: '#C8956C',
+                      borderRadius: '50%',
+                      animation: 'spin 0.7s linear infinite',
+                    }} />
+                  </div>
+                ) : sorted.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '64px 0' }}>
+                    <div style={{
+                      width: '56px',
+                      height: '56px',
+                      borderRadius: '50%',
+                      background: 'rgba(200,149,108,0.12)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 16px',
+                    }}>
+                      <Package2 size={24} strokeWidth={1.5} style={{ color: '#C8956C' }} />
+                    </div>
+                    <p style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '17px', color: 'var(--color-text-primary)', marginBottom: '6px' }}>
+                      No quotations yet
+                    </p>
+                    <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                      Fill in the calculator and save your first quote.
+                    </p>
+                  </div>
+                ) : (
+                  sorted.map((q) => (
+                    <QuotationCard
+                      key={q.id}
+                      quotation={q}
+                      onLoad={handleLoad}
+                      onDuplicate={handleDuplicate}
+                      onDelete={handleDelete}
+                      onExport={handleExport}
+                    />
+                  ))
+                )}
+              </div>
+
+              {/* ── Unsaved changes confirm ── */}
+              <AnimatePresence>
+                {pendingLoad && (
+                  <motion.div
+                    key="pending"
+                    initial={{ y: '100%' }}
+                    animate={{ y: 0 }}
+                    exit={{ y: '100%' }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: 'var(--color-surface)',
+                      borderTop: '1px solid var(--color-border)',
+                      padding: '20px 24px',
+                      boxShadow: '0 -8px 32px rgba(0,0,0,0.1)',
+                    }}
+                  >
+                    <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: '4px' }}>
+                      You have unsaved changes.
+                    </p>
+                    <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
+                      Load anyway? Your current work will be lost.
+                    </p>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        onClick={() => doLoad(pendingLoad)}
+                        className="shimmer-btn"
+                        style={{
+                          flex: 1,
+                          padding: '10px 0',
+                          background: 'linear-gradient(135deg, #C8956C 0%, #b8825c 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '10px',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          fontFamily: "'DM Sans', sans-serif",
+                          cursor: 'pointer',
+                          transition: 'transform 200ms ease, box-shadow 200ms ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-2px)';
+                          e.currentTarget.style.boxShadow = '0 4px 16px rgba(200,149,108,0.4)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      >
+                        Load Anyway
+                      </button>
+                      <button
+                        onClick={() => setPendingLoad(null)}
+                        style={{
+                          flex: 1,
+                          padding: '10px 0',
+                          background: 'none',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: '10px',
+                          fontSize: '13px',
+                          fontFamily: "'DM Sans', sans-serif",
+                          color: 'var(--color-text-secondary)',
+                          cursor: 'pointer',
+                          transition: 'all 200ms ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.borderColor = 'var(--color-text-secondary)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.borderColor = 'var(--color-border)';
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 

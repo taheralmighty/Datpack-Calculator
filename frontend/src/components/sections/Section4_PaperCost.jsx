@@ -17,7 +17,7 @@ const Section4 = ({ completion, calc }) => {
           overrideValue={overrides?.weightPerSheet}
           onOverride={v => setOverride('weightPerSheet', v)}
           onReset={() => clearOverride('weightPerSheet')}
-          tooltip="(Master Length × Master Width × GSM) ÷ 1,550,000"
+          formulaTooltip="(Master Length × Master Width × GSM) ÷ 1,550,000"
           format={v => (parseFloat(v) || 0).toFixed(6)}
           data-testid="weight-per-sheet"
         />
@@ -27,17 +27,19 @@ const Section4 = ({ completion, calc }) => {
           overrideValue={overrides?.totalWeight}
           onOverride={v => setOverride('totalWeight', v)}
           onReset={() => clearOverride('totalWeight')}
-          tooltip="Gross Sheets × Weight per Sheet"
+          formulaTooltip="Gross Sheets × Weight per Sheet"
           format={v => (parseFloat(v) || 0).toFixed(3)}
           data-testid="total-weight"
         />
         <AnimatedInput label="Paper Rate per kg (₹)" value={paperRate} onChange={v => setField('paperRate', v)} type="number" placeholder="120" unit="₹/kg" data-testid="paper-rate-input" />
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wide">Total Paper Cost</label>
-          <div className="px-3 py-2.5 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--copper)] font-bold tabular-nums" data-testid="total-paper-cost">
-            {formatINR(calc?.paperCost)}
-          </div>
-        </div>
+        <CalculatedEditableField
+          label="Total Paper Cost"
+          calculatedValue={calc?.paperCost || 0}
+          formulaTooltip="Total Paper Weight × Paper Rate per kg"
+          onOverride={v => setOverride('totalPaperCost', v)}
+          onReset={() => clearOverride('totalPaperCost')}
+          data-testid="total-paper-cost"
+        />
       </div>
     </SectionCard>
   );

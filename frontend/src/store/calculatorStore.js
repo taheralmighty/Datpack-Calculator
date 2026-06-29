@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getDefaultState, migrateState, calcAll } from '../lib/calc';
+export { calcAll } from '../lib/calc';
 
 const useCalculatorStore = create((set, get) => ({
   // ─── Calculator State ─────────────────────────────
@@ -43,6 +44,7 @@ const useCalculatorStore = create((set, get) => ({
     const { isDirty, setField, setOverride, clearOverride, setIsRepeatOrder, loadState, resetCalculator, markClean, getCalc, getSerializable, ...rest } = s;
     return rest;
   },
+
 }));
 
 export default useCalculatorStore;

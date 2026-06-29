@@ -7,25 +7,16 @@ module.exports = {
       colors: {
         copper: {
           DEFAULT: "#C8956C",
-          light: "rgba(200,149,108,0.15)",
-          dark: "#A0704A",
+          light: "rgba(200, 149, 108, 0.12)",
+          glow: "rgba(200, 149, 108, 0.20)",
         },
-        brand: {
-          bg: "#FAFAFA",
-          surface: "#FFFFFF",
-          text: "#1A1A1A",
-          secondary: "#555555",
-          border: "#E8E8E6",
-          "dark-bg": "#111111",
-          "dark-surface": "#1A1A1A",
-          "dark-text": "#F0EDE8",
-          "dark-secondary": "#A3A3A3",
-          "dark-border": "#2A2A2A",
-        },
+        offwhite: "#FAFAFA",
+        matte: "#1A1A1A",
       },
       fontFamily: {
-        display: ["Playfair Display", "Georgia", "serif"],
-        sans: ["DM Sans", "system-ui", "sans-serif"],
+        sans: ["DM Sans", "sans-serif"],
+        serif: ["Playfair Display", "serif"],
+        display: ["'Cormorant Garamond'", "serif"],
       },
       backdropBlur: {
         xs: "2px",

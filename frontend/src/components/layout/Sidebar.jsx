@@ -1,114 +1,122 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import { formatINR } from '../../lib/calc';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  FileText, Layers, Grid, DollarSign, Printer,
+  Sparkles, Scissors, BarChart2, RefreshCw,
+} from 'lucide-react';
+
+const ICON_MAP = {
+  FileText, Layers, Grid, DollarSign, Printer,
+  Sparkles, Scissors, BarChart2, RefreshCw,
+};
 
 const SECTIONS = [
-  { id: 'section-1', label: 'Job Specs' },
-  { id: 'section-2', label: 'Paper Specs' },
-  { id: 'section-3', label: 'Layout & Qty' },
-  { id: 'section-4', label: 'Paper Cost' },
-  { id: 'section-5', label: 'Printing & Lam' },
-  { id: 'section-6', label: 'Finishes' },
-  { id: 'section-7', label: 'Finishing' },
-  { id: 'section-8', label: 'Summary' },
-  { id: 'section-9', label: 'Repeat Order' },
+  { id: 1, label: 'Job Specs', icon: 'FileText' },
+  { id: 2, label: 'Paper Specs', icon: 'Layers' },
+  { id: 3, label: 'Layout & Qty', icon: 'Grid' },
+  { id: 4, label: 'Paper Cost', icon: 'DollarSign' },
+  { id: 5, label: 'Print & Lam', icon: 'Printer' },
+  { id: 6, label: 'Finishes', icon: 'Sparkles' },
+  { id: 7, label: 'Finishing', icon: 'Scissors' },
+  { id: 8, label: 'Summary', icon: 'BarChart2' },
+  { id: 9, label: 'Repeat Order', icon: 'RefreshCw' },
 ];
 
-const Sidebar = ({ activeSection, completions = {}, calc }) => {
-  const completedCount = Object.values(completions).filter(v => v === 'complete').length;
-  const progress = (completedCount / SECTIONS.length) * 100;
+const DOT_COLOR = {
+  empty: 'bg-gray-300',
+  partial: 'bg-amber-400',
+  complete: 'bg-emerald-500',
+};
 
-  const scrollTo = (id) => {
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+function formatSubtotal(n) {
+  if (!n || isNaN(n)) return null;
+  return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
+export default function Sidebar({ activeSection, onSectionClick, sectionSubtotals = {}, sectionCompletion = {} }) {
+  const completeCount = Object.values(sectionCompletion).filter(v => v === 'complete').length;
+  const pct = (completeCount / 9) * 100;
 
   return (
     <aside
-      className="fixed left-0 top-14 h-[calc(100vh-3.5rem)] w-[240px] border-r border-[var(--border)] bg-[var(--surface)] flex flex-col z-20 hidden lg:flex"
-      data-testid="sidebar"
+      className="fixed left-0 top-14 z-20 flex flex-col
+                 w-12 md:w-[240px]
+                 h-[calc(100vh-56px)] overflow-y-auto
+                 border-r border-[var(--color-border)]"
+      style={{ background: 'var(--color-bg-secondary)' }}
     >
-      <div className="px-5 py-5 flex-1 overflow-y-auto">
-        <div className="mb-4">
-          <div className="flex items-center justify-between text-xs text-[var(--text-secondary)] mb-2">
-            <span>Completion</span>
-            <span className="tabular-nums">{completedCount}/{SECTIONS.length}</span>
-          </div>
-          <div className="h-1 bg-[var(--border)] rounded-full overflow-hidden">
-            <motion.div
-              className="h-full rounded-full"
-              style={{ background: 'linear-gradient(90deg, #C8956C, #E8B898)' }}
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-            />
-          </div>
-        </div>
+      {/* ── Nav items ── */}
+      <nav className="flex-1 p-2 md:p-4 space-y-0.5">
+        {SECTIONS.map(({ id, label, icon }) => {
+          const Icon = ICON_MAP[icon];
+          const completion = sectionCompletion[id] || 'empty';
+          const subtotal = formatSubtotal(sectionSubtotals[id]);
+          const isActive = activeSection === id;
 
-        <nav className="space-y-0.5">
-          {SECTIONS.map((sec, i) => {
-            const comp = completions[sec.id] || 'empty';
-            const isActive = activeSection === sec.id;
-            return (
+          return (
+            <div key={id} className="relative">
+              {/* Active left-border indicator */}
+              <AnimatePresence>
+                {isActive && (
+                  <motion.span
+                    layoutId="sidebar-active-bar"
+                    className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full"
+                    style={{ background: 'var(--color-accent)' }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  />
+                )}
+              </AnimatePresence>
+
               <button
-                key={sec.id}
-                onClick={() => scrollTo(sec.id)}
-                data-clickable
-                data-testid={`sidebar-${sec.id}`}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all duration-150 group ${
-                  isActive
-                    ? 'bg-[var(--copper-glow)] text-[var(--copper)]'
-                    : 'hover:bg-[var(--bg)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                }`}
+                onClick={() => onSectionClick(id)}
+                className={`shimmer-btn w-full flex items-center gap-3 pl-3 pr-2 py-2.5 rounded-lg text-left transition-all duration-150 hover:-translate-y-0.5
+                  ${isActive
+                    ? 'bg-[var(--color-accent-light)] text-[var(--color-accent)]'
+                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-accent-light)] hover:opacity-80'
+                  }`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                  comp === 'complete' ? 'bg-green-500'
-                  : comp === 'partial' ? 'bg-amber-500'
-                  : 'bg-[var(--border)]'
-                }`} />
-                <span className="text-sm font-medium flex-1 truncate">{sec.label}</span>
-                <span className={`text-[10px] font-bold uppercase ${
-                  comp === 'complete' ? 'text-green-500'
-                  : comp === 'partial' ? 'text-amber-500'
-                  : 'text-[var(--border)]'
-                }`}>
-                  {comp === 'complete' ? '✓' : comp === 'partial' ? '~' : ''}
+                {/* Icon (always visible) */}
+                <Icon size={15} className="flex-shrink-0" />
+
+                {/* Label + subtotal (hidden on mobile) */}
+                <span className="hidden md:flex flex-col flex-1 min-w-0">
+                  <span className="flex items-center gap-2">
+                    {/* Completion dot */}
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${DOT_COLOR[completion]}`} />
+                    <span className="text-sm truncate">{label}</span>
+                  </span>
+                  {subtotal && (
+                    <span className="text-xs pl-3.5" style={{ color: 'var(--color-accent)' }}>
+                      {subtotal}
+                    </span>
+                  )}
                 </span>
               </button>
-            );
-          })}
-        </nav>
-      </div>
+            </div>
+          );
+        })}
+      </nav>
 
-      {/* Subtotals */}
-      {calc && calc.totalProductionCost > 0 && (
-        <div className="border-t border-[var(--border)] px-5 py-4 space-y-2">
-          <p className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-semibold">Cost Summary</p>
-          <div className="space-y-1.5 text-xs">
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Paper</span>
-              <span className="tabular-nums text-[var(--text-primary)]">{formatINR(calc.paperCost)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Print+Lam</span>
-              <span className="tabular-nums text-[var(--text-primary)]">{formatINR(calc.printCost + calc.lamCost)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Finishes</span>
-              <span className="tabular-nums text-[var(--text-primary)]">{formatINR(calc.foilingCost + calc.uvCost)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Finishing</span>
-              <span className="tabular-nums text-[var(--text-primary)]">{formatINR(calc.dieCuttingCost + calc.pastingCost)}</span>
-            </div>
-            <div className="flex justify-between border-t border-[var(--border)] pt-1.5 font-semibold">
-              <span className="text-[var(--copper)]">Total</span>
-              <span className="tabular-nums text-[var(--copper)]">{formatINR(calc.totalProductionCost)}</span>
-            </div>
-          </div>
+      {/* ── Progress bar (hidden on mobile) ── */}
+      <div className="hidden md:block p-4 border-t border-[var(--color-border)]">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs text-[var(--color-text-secondary)]">Quote Completion</span>
+          <span className="text-xs text-[var(--color-text-secondary)]">{completeCount} of 9</span>
         </div>
-      )}
+        <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--color-border)' }}>
+          <motion.div
+            className="h-full rounded-full"
+            style={{ background: 'linear-gradient(90deg, #C8956C, #E8B898)' }}
+            animate={{ width: `${pct}%` }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          />
+        </div>
+        <p className="text-xs text-[var(--color-text-secondary)] mt-1.5">
+          {completeCount} of 9 sections complete
+        </p>
+      </div>
     </aside>
   );
-};
-
-export default Sidebar;
+}

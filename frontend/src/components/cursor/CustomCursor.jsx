@@ -1,56 +1,134 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { motion, useMotionValue, useSpring } from 'framer-motion';
+import { useEffect, useRef } from 'react';
 
-const CustomCursor = () => {
-  const [isHovering, setIsHovering] = useState(false);
-  const [isInput, setIsInput] = useState(false);
-  const dotX = useMotionValue(0);
-  const dotY = useMotionValue(0);
-  const ringXRaw = useMotionValue(0);
-  const ringYRaw = useMotionValue(0);
-  const ringX = useSpring(ringXRaw, { stiffness: 150, damping: 20 });
-  const ringY = useSpring(ringYRaw, { stiffness: 150, damping: 20 });
+// Lerp factor — higher = faster ring catch-up (0.12 ≈ 80ms feel, 0.18 feels snappier)
+const LERP = 0.18;
+
+export default function CustomCursor() {
+  // Skip on touch/mobile devices
+  if (window.matchMedia('(pointer: coarse)').matches) return null;
+
+  return <CursorImpl />;
+}
+
+function CursorImpl() {
+  const dotRef = useRef(null);
+  const ringRef = useRef(null);
 
   useEffect(() => {
-    const onMove = (e) => {
-      dotX.set(e.clientX);
-      dotY.set(e.clientY);
-      ringXRaw.set(e.clientX);
-      ringYRaw.set(e.clientY);
-    };
-    const onOver = (e) => {
-      const tag = e.target.tagName.toLowerCase();
-      const isClickable = e.target.closest('button, a, [role="button"], [data-clickable]');
-      const isInputEl = ['input', 'textarea', 'select'].includes(tag);
-      setIsInput(isInputEl);
-      setIsHovering(!!isClickable && !isInputEl);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseover', onOver);
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseover', onOver); };
-  }, [dotX, dotY, ringXRaw, ringYRaw]);
+    const dot = dotRef.current;
+    const ring = ringRef.current;
+    if (!dot || !ring) return;
 
-  // Hide on touch devices
-  if (window.matchMedia('(pointer: coarse)').matches) return null;
+    // Current real mouse position (dot)
+    let mx = -200, my = -200;
+    // Ring's interpolated position
+    let rx = -200, ry = -200;
+    let rafId;
+
+    // --- Mouse position tracker ---
+    const onMouseMove = (e) => {
+      mx = e.clientX;
+      my = e.clientY;
+      // Dot follows immediately via direct style mutation — zero React overhead
+      dot.style.transform = `translate(${mx}px, ${my}px) translate(-50%, -50%)`;
+    };
+
+    // --- RAF loop for ring lerp ---
+    const loop = () => {
+      rx += (mx - rx) * LERP;
+      ry += (my - ry) * LERP;
+      ring.style.transform = `translate(${rx}px, ${ry}px) translate(-50%, -50%)`;
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+
+    // --- Hover state detection ---
+    const INTERACTIVE = 'button, a, [role="button"], input, select, label';
+    const INPUT_ELS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+
+    const onMouseOver = (e) => {
+      const isInput = INPUT_ELS.has(e.target.tagName);
+      const isHovering = !!e.target.closest(INTERACTIVE);
+
+      if (isInput) {
+        // Thin vertical bar for text inputs
+        dot.style.width = '2px';
+        dot.style.height = '16px';
+        dot.style.borderRadius = '1px';
+        ring.classList.remove('cursor-hover');
+      } else if (isHovering) {
+        dot.style.width = '6px';
+        dot.style.height = '6px';
+        dot.style.borderRadius = '50%';
+        ring.classList.add('cursor-hover');
+      } else {
+        dot.style.width = '6px';
+        dot.style.height = '6px';
+        dot.style.borderRadius = '50%';
+        ring.classList.remove('cursor-hover');
+      }
+    };
+
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
+    window.addEventListener('mouseover', onMouseOver, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseover', onMouseOver);
+      cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   return (
     <>
-      <motion.div
-        style={{ x: dotX, y: dotY, translateX: '-50%', translateY: '-50%' }}
-        className="fixed top-0 left-0 w-1.5 h-1.5 rounded-full bg-[var(--text-primary)] pointer-events-none z-[9999]"
+      {/* Dot — snaps to mouse immediately */}
+      <div
+        ref={dotRef}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '6px',
+          height: '6px',
+          borderRadius: '50%',
+          background: 'var(--cursor-dot)',
+          pointerEvents: 'none',
+          zIndex: 999999,
+          willChange: 'transform',
+        }}
       />
-      <motion.div
-        style={{ x: ringX, y: ringY, translateX: '-50%', translateY: '-50%' }}
-        className={`fixed top-0 left-0 rounded-full pointer-events-none z-[9998] border transition-all duration-200 ${
-          isHovering
-            ? 'w-12 h-12 bg-[var(--copper-glow)] border-[var(--copper)]'
-            : isInput
-            ? 'w-4 h-4 border-[var(--copper)]'
-            : 'w-8 h-8 border-[rgba(200,149,108,0.5)]'
-        }`}
+
+      {/* Ring — lerp-follows with 0.18 factor */}
+      <div
+        ref={ringRef}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '32px',
+          height: '32px',
+          borderRadius: '50%',
+          border: '1.5px solid var(--cursor-ring)',
+          background: 'transparent',
+          pointerEvents: 'none',
+          zIndex: 999998,
+          willChange: 'transform',
+          transition: 'width 0.15s ease, height 0.15s ease, background 0.15s ease, border-color 0.15s ease',
+        }}
+      // .cursor-hover is toggled by onMouseOver above
+      // Styles for .cursor-hover live in index.css (.cursor-ring.hovering)
+      // We re-use the existing class from index.css for the expanded/tinted state
       />
+
+      <style>{`
+        div[data-cursor-ring].cursor-hover,
+        .cursor-hover {
+          width: 48px !important;
+          height: 48px !important;
+          background: rgba(200, 149, 108, 0.15) !important;
+          border-color: #C8956C !important;
+        }
+      `}</style>
     </>
   );
-};
-
-export default CustomCursor;
+}

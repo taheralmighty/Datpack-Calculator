@@ -46,6 +46,7 @@ export const saveQuotation = async (data) => {
 
 export const deleteQuotation = async (id) => {
   set('quotations', quotations().filter(q => q.id !== id));
+  return { success: true };
 };
 
 export const duplicateQuotation = async (id) => {
@@ -65,4 +66,15 @@ export const duplicateQuotation = async (id) => {
   all.push(copy);
   set('quotations', all);
   return copy;
+};
+
+export const getAllQuotations = async () => {
+  const allClients = clients();
+  return quotations()
+    .map(q => ({
+      ...q,
+      clientName: allClients.find(c => c.id === q.client_id)?.name || '',
+    }))
+    .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+    .slice(0, 200);
 };

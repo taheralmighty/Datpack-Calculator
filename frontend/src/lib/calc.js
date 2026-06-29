@@ -1,7 +1,7 @@
 // ─── Indian Rupee Formatter ────────────────────────────
 export const formatINR = (value) => {
-  if (value === null || value === undefined || isNaN(value)) return '₹0.00';
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  if (value === null || value === undefined || isNaN(value) || !isFinite(value) || value === 0) return '₹—';
+  return '₹' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 // ─── Quote Number Generator ────────────────────────────
@@ -11,44 +11,70 @@ export const generateQuoteNumber = () => {
   return `QT-${date}-${suffix}`;
 };
 
-// ─── State Migration ──────────────────────────────────
+// ─── Default State ────────────────────────────────────
 const DEFAULT_STATE = {
-  clientName: '', jobName: '', orderQty: '',
-  flatLength: '', flatWidth: '',
-  masterLength: '', masterWidth: '', gsm: '',
-  upsPerSheet: '', netSheets: '', wastage: 5, grossSheets: '',
-  weightPerSheet: '', totalWeight: '', paperRate: '',
-  clickCharge: '', lamRate: '',
-  foilLength: '', foilWidth: '', foilBlockRate: '', foilingSetup: '', foilingRunRate: '',
-  uvScreenCost: '', uvRunRate: '',
-  punchingRate: '', punchingSetup: '', dieCost: '', pastingRate: '',
-  margin: 30, gst: 18,
+  // Section 1 — Job Specifications
+  clientName: '', jobName: '', orderQty: 0,
+  // Section 2 — Paper Specifications (all dimensions in INCHES)
+  flatLength: 0, flatWidth: 0,
+  masterLength: 0, masterWidth: 0, gsm: 0,
+  // Section 3 — Layout & Quantity
+  platenWastage: 0.05, // stored as decimal (0.05 = 5%)
+  upsOverride: null,
+  // Section 4 — Paper Cost
+  paperRate: 0,
+  // Section 5 — Printing & Lamination
+  clickCharge: 0, lamRate: 0,
+  // Section 6 — Premium Finishes (dimensions in INCHES)
+  foilLength: 0, foilWidth: 0, foilBlockRate: 0, foilingSetup: 0, foilingRunRate: 0,
+  uvScreenCost: 0, uvRunRate: 0,
+  // Section 7 — Finishing
+  punchingRate: 0, punchingSetup: 0, woodenDieCost: 0, pastingRate: 0,
+  // Section 8 — Pricing (stored as decimals: 0.20 = 20%)
+  margin: 0.20, gst: 0.18,
+  // Section 9 — Repeat Order
   isRepeatOrder: false,
   overrides: {},
 };
 
 export const migrateState = (saved) => {
-  if (!saved) return DEFAULT_STATE;
-  return { ...DEFAULT_STATE, ...saved };
+  if (!saved) return { ...DEFAULT_STATE };
+  const migrated = { ...DEFAULT_STATE, ...saved };
+  // Migrate old field names to new ones
+  if ('wastage' in saved && !('platenWastage' in saved)) {
+    const w = parseFloat(saved.wastage);
+    migrated.platenWastage = w > 1 ? w / 100 : (w || 0.05);
+    delete migrated.wastage;
+  }
+  if ('dieCost' in saved && !('woodenDieCost' in saved)) {
+    migrated.woodenDieCost = saved.dieCost;
+    delete migrated.dieCost;
+  }
+  // Migrate margin/gst from percentage to decimal if needed
+  if (parseFloat(migrated.margin) > 1) migrated.margin = parseFloat(migrated.margin) / 100;
+  if (parseFloat(migrated.gst) > 1) migrated.gst = parseFloat(migrated.gst) / 100;
+  return migrated;
 };
 
 export const getDefaultState = () => ({ ...DEFAULT_STATE });
 
 // ─── Calculation Helpers ──────────────────────────────
-const n = (v) => parseFloat(v) || 0;
+const n = (v) => { const num = parseFloat(v); return isNaN(num) || !isFinite(num) ? 0 : num; };
+const safe = (result) => (isNaN(result) || !isFinite(result) ? 0 : result);
 
 export const calcUpsPerSheet = (masterL, masterW, flatL, flatW) => {
-  if (!masterL || !masterW || !flatL || !flatW) return 0;
+  if (!n(flatL) || !n(flatW)) return 0;
   return Math.floor(n(masterL) / n(flatL)) * Math.floor(n(masterW) / n(flatW));
 };
 
 export const calcNetSheets = (orderQty, ups) => {
-  if (!ups || !orderQty) return 0;
+  if (!n(ups)) return 0;
   return Math.ceil(n(orderQty) / n(ups));
 };
 
-export const calcGrossSheets = (netSheets, wastage) => {
-  return Math.ceil(n(netSheets) * (1 + n(wastage) / 100));
+// platenWastage is stored as decimal (0.05 = 5%) — no /100 needed
+export const calcGrossSheets = (netSheets, platenWastage) => {
+  return Math.ceil(n(netSheets) * (1 + n(platenWastage)));
 };
 
 export const calcWeightPerSheet = (masterL, masterW, gsm) => {
@@ -62,11 +88,13 @@ export const calcPaperCost = (totalWeight, paperRate) => n(totalWeight) * n(pape
 
 export const calcPrintCost = (grossSheets, clickCharge) => n(grossSheets) * n(clickCharge);
 
-export const calcSqInPerSheet = (masterL, masterW) => (n(masterL) * n(masterW)) / 645.16;
+// sqInchesPerSheet uses FLAT SIZE dimensions in inches — no conversion factor
+export const calcSqInPerSheet = (flatL, flatW) => n(flatL) * n(flatW);
 
 export const calcLamCost = (grossSheets, sqIn, lamRate) => n(grossSheets) * n(sqIn) * n(lamRate);
 
-export const calcFoilBlockCost = (foilL, foilW, blockRate) => ((n(foilL) * n(foilW)) / 645.16) * n(blockRate);
+// foilBlockCost: dimensions in inches — no conversion factor
+export const calcFoilBlockCost = (foilL, foilW, blockRate) => n(foilL) * n(foilW) * n(blockRate);
 
 export const calcTotalFoilingCost = (grossSheets, runRate, setup, blockCost) =>
   ((n(grossSheets) / 1000) * n(runRate)) + n(setup) + n(blockCost);
@@ -74,8 +102,8 @@ export const calcTotalFoilingCost = (grossSheets, runRate, setup, blockCost) =>
 export const calcSpotUVCost = (grossSheets, uvRunRate, uvScreenCost) =>
   ((n(grossSheets) / 1000) * n(uvRunRate)) + n(uvScreenCost);
 
-export const calcDieCuttingCost = (grossSheets, punchingRate, punchingSetup, dieCost) =>
-  ((n(grossSheets) / 1000) * n(punchingRate)) + n(punchingSetup) + n(dieCost);
+export const calcDieCuttingCost = (grossSheets, punchingRate, punchingSetup, woodenDieCost) =>
+  ((n(grossSheets) / 1000) * n(punchingRate)) + n(punchingSetup) + n(woodenDieCost);
 
 export const calcPastingCost = (orderQty, pastingRate) => n(orderQty) * n(pastingRate);
 
@@ -83,46 +111,121 @@ export const calcAll = (state) => {
   const s = state;
   const o = s.overrides || {};
 
-  const upsPerSheet = o.upsPerSheet != null ? n(o.upsPerSheet) : calcUpsPerSheet(s.masterLength, s.masterWidth, s.flatLength, s.flatWidth);
-  const netSheets = o.netSheets != null ? n(o.netSheets) : calcNetSheets(s.orderQty, upsPerSheet);
-  const grossSheets = o.grossSheets != null ? n(o.grossSheets) : calcGrossSheets(netSheets, s.wastage);
-  const weightPerSheet = o.weightPerSheet != null ? n(o.weightPerSheet) : calcWeightPerSheet(s.masterLength, s.masterWidth, s.gsm);
-  const totalWeight = o.totalWeight != null ? n(o.totalWeight) : calcTotalWeight(grossSheets, weightPerSheet);
+  // Section 3 — Layout
+  const upsPerSheet = o.upsPerSheet != null
+    ? n(o.upsPerSheet)
+    : safe(calcUpsPerSheet(s.masterLength, s.masterWidth, s.flatLength, s.flatWidth));
+  const netSheets = o.netSheets != null
+    ? n(o.netSheets)
+    : safe(calcNetSheets(s.orderQty, upsPerSheet));
+  const grossSheets = o.grossSheets != null
+    ? n(o.grossSheets)
+    : safe(calcGrossSheets(netSheets, s.platenWastage));
 
-  const paperCost = calcPaperCost(totalWeight, s.paperRate);
-  const printCost = calcPrintCost(grossSheets, s.clickCharge);
-  const sqInPerSheet = calcSqInPerSheet(s.masterLength, s.masterWidth);
-  const lamCost = calcLamCost(grossSheets, sqInPerSheet, s.lamRate);
-  const foilBlockCost = calcFoilBlockCost(s.foilLength, s.foilWidth, s.foilBlockRate);
-  const foilingCost = calcTotalFoilingCost(grossSheets, s.foilingRunRate, s.foilingSetup, foilBlockCost);
-  const uvCost = calcSpotUVCost(grossSheets, s.uvRunRate, s.uvScreenCost);
-  const dieCuttingCost = calcDieCuttingCost(grossSheets, s.punchingRate, s.punchingSetup, s.dieCost);
-  const pastingCost = calcPastingCost(s.orderQty, s.pastingRate);
+  // Section 4 — Paper Cost
+  const weightPerSheet = o.weightPerSheet != null
+    ? n(o.weightPerSheet)
+    : safe(calcWeightPerSheet(s.masterLength, s.masterWidth, s.gsm));
+  const totalPaperWeight = o.totalPaperWeight != null
+    ? n(o.totalPaperWeight)
+    : safe(calcTotalWeight(grossSheets, weightPerSheet));
+  const totalPaperCost = o.totalPaperCost != null
+    ? n(o.totalPaperCost)
+    : safe(calcPaperCost(totalPaperWeight, s.paperRate));
 
-  const totalProductionCost = paperCost + printCost + lamCost + foilingCost + uvCost + dieCuttingCost + pastingCost;
-  const costPerUnit = n(s.orderQty) > 0 ? totalProductionCost / n(s.orderQty) : 0;
-  const sellingPricePerUnit = n(s.margin) < 100 ? costPerUnit / (1 - n(s.margin) / 100) : 0;
-  const subtotal = sellingPricePerUnit * n(s.orderQty);
-  const finalTotal = subtotal * (1 + n(s.gst) / 100);
+  // Section 5 — Print & Lamination
+  const totalImpressions = grossSheets;
+  const totalPrintCost = o.totalPrintCost != null
+    ? n(o.totalPrintCost)
+    : safe(calcPrintCost(grossSheets, s.clickCharge));
+  const sqInchesPerSheet = o.sqInchesPerSheet != null
+    ? n(o.sqInchesPerSheet)
+    : safe(calcSqInPerSheet(s.flatLength, s.flatWidth));
+  const totalLamCost = o.totalLamCost != null
+    ? n(o.totalLamCost)
+    : safe(calcLamCost(grossSheets, sqInchesPerSheet, s.lamRate));
 
-  const oneTimeTooling = foilBlockCost + n(s.uvScreenCost) + n(s.dieCost);
-  const repeatSubtotal = subtotal - oneTimeTooling;
-  const repeatFinalTotal = repeatSubtotal * (1 + n(s.gst) / 100);
+  // Section 6 — Premium Finishes
+  const foilBlockCost = o.foilBlockCost != null
+    ? n(o.foilBlockCost)
+    : safe(calcFoilBlockCost(s.foilLength, s.foilWidth, s.foilBlockRate));
+  const totalFoilingCost = o.totalFoilingCost != null
+    ? n(o.totalFoilingCost)
+    : safe(calcTotalFoilingCost(grossSheets, s.foilingRunRate, s.foilingSetup, foilBlockCost));
+  const totalSpotUVCost = o.totalSpotUVCost != null
+    ? n(o.totalSpotUVCost)
+    : safe(calcSpotUVCost(grossSheets, s.uvRunRate, s.uvScreenCost));
+
+  // Section 7 — Finishing
+  const totalDieCuttingCost = o.totalDieCuttingCost != null
+    ? n(o.totalDieCuttingCost)
+    : safe(calcDieCuttingCost(grossSheets, s.punchingRate, s.punchingSetup, s.woodenDieCost));
+  const totalPastingCost = o.totalPastingCost != null
+    ? n(o.totalPastingCost)
+    : safe(calcPastingCost(s.orderQty, s.pastingRate));
+
+  // Section 8 — Summary
+  // ⚠ Foiling & Spot UV are premium add-ons shown separately — NOT in base production cost
+  const totalProductionCost = safe(totalPaperCost + totalPrintCost + totalLamCost + totalDieCuttingCost + totalPastingCost);
+
+  const orderQty = n(s.orderQty);
+  const margin = n(s.margin);  // decimal e.g. 0.20
+  const gst = n(s.gst);        // decimal e.g. 0.18
+
+  const costPerUnit = orderQty > 0 ? safe(totalProductionCost / orderQty) : 0;
+  const sellingPricePerUnit = (1 - margin) > 0 ? safe(costPerUnit / (1 - margin)) : 0;
+  const totalQuoteValue = safe(sellingPricePerUnit * orderQty);
+  const gstAmount = safe(totalQuoteValue * gst);
+  const grandTotal = safe(totalQuoteValue * (1 + gst));
+
+  // Section 9 — Repeat Order
+  const oneTimeTooling = safe(foilBlockCost + n(s.uvScreenCost) + n(s.woodenDieCost));
+  const repeatProductionCost = safe(totalProductionCost - oneTimeTooling);
+  const repeatCostPerUnit = orderQty > 0 ? safe(repeatProductionCost / orderQty) : 0;
+  const repeatSellingPricePerUnit = (1 - margin) > 0 ? safe(repeatCostPerUnit / (1 - margin)) : 0;
+  const repeatQuoteValue = safe(repeatSellingPricePerUnit * orderQty);
+  const repeatGSTAmount = safe(repeatQuoteValue * gst);
+  const repeatGrandTotal = safe(repeatQuoteValue * (1 + gst));
 
   return {
-    upsPerSheet, netSheets, grossSheets, weightPerSheet, totalWeight,
-    paperCost, printCost, sqInPerSheet, lamCost,
-    foilBlockCost, foilingCost, uvCost, dieCuttingCost, pastingCost,
-    totalProductionCost, costPerUnit, sellingPricePerUnit, subtotal, finalTotal,
-    oneTimeTooling, repeatSubtotal, repeatFinalTotal,
+    // Layout
+    upsPerSheet, netSheets, grossSheets,
+    // Paper
+    weightPerSheet, totalPaperWeight, totalPaperCost,
+    // Print & Lam
+    totalImpressions, totalPrintCost, sqInchesPerSheet, totalLamCost,
+    // Finishes
+    foilBlockCost, totalFoilingCost, totalSpotUVCost,
+    // Finishing
+    totalDieCuttingCost, totalPastingCost,
+    // Summary
+    totalProductionCost, costPerUnit, sellingPricePerUnit, totalQuoteValue, gstAmount, grandTotal,
+    // Repeat Order
+    oneTimeTooling, repeatProductionCost, repeatCostPerUnit, repeatSellingPricePerUnit,
+    repeatQuoteValue, repeatGSTAmount, repeatGrandTotal,
+    // Backward-compat aliases so existing section components keep working
+    paperCost: totalPaperCost,
+    printCost: totalPrintCost,
+    lamCost: totalLamCost,
+    foilingCost: totalFoilingCost,
+    uvCost: totalSpotUVCost,
+    dieCuttingCost: totalDieCuttingCost,
+    pastingCost: totalPastingCost,
+    totalWeight: totalPaperWeight,
+    sqInPerSheet: sqInchesPerSheet,
+    subtotal: totalQuoteValue,
+    finalTotal: grandTotal,
+    repeatSubtotal: repeatQuoteValue,
+    repeatFinalTotal: repeatGrandTotal,
+    // Cost breakdown for chart
     breakdown: [
-      { name: 'Paper', value: paperCost },
-      { name: 'Printing', value: printCost },
-      { name: 'Lamination', value: lamCost },
-      { name: 'Foiling', value: foilingCost },
-      { name: 'Spot UV', value: uvCost },
-      { name: 'Die-Cutting', value: dieCuttingCost },
-      { name: 'Pasting', value: pastingCost },
+      { name: 'Paper', value: totalPaperCost },
+      { name: 'Printing', value: totalPrintCost },
+      { name: 'Lamination', value: totalLamCost },
+      { name: 'Foiling', value: totalFoilingCost },
+      { name: 'Spot UV', value: totalSpotUVCost },
+      { name: 'Die-Cutting', value: totalDieCuttingCost },
+      { name: 'Pasting', value: totalPastingCost },
     ].filter(b => b.value > 0),
   };
 };

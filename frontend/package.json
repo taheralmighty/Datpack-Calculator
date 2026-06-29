@@ -3,25 +3,27 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.3",
-    "@tanstack/react-query": "^5.17.19",
+    "@supabase/supabase-js": "^2.101.1",
+    "@tanstack/react-query": "^5.96.1",
     "autoprefixer": "^10.4.27",
-    "framer-motion": "^11.0.3",
-    "jspdf": "^2.5.1",
-    "jspdf-autotable": "^3.8.2",
-    "lodash": "4.17.21",
+    "framer-motion": "^11.18.2",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
+    "lodash": "^4.17.23",
     "lucide-react": "^0.321.0",
-    "papaparse": "^5.4.1",
+    "next-themes": "^0.4.6",
+    "papaparse": "^5.5.3",
     "postcss": "^8.5.8",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
-    "recharts": "^2.12.1",
+    "react-scripts": "^5.0.1",
+    "recharts": "^2.15.4",
     "tailwindcss": "^3.4.1",
-    "zustand": "^4.5.1"
+    "zustand": "^4.5.7"
   },
   "scripts": {
-    "start": "PORT=3000 react-scripts start",
+    "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test"
   },
@@ -36,5 +38,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "@types/papaparse": "^5.5.2"
   }
 }

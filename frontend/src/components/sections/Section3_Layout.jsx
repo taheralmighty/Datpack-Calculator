@@ -5,37 +5,49 @@ import CalculatedEditableField from '../ui/CalculatedEditableField';
 import useCalculatorStore from '../../store/calculatorStore';
 
 const Section3 = ({ completion, calc }) => {
-  const { wastage, overrides, setField, setOverride, clearOverride } = useCalculatorStore();
+  const { platenWastage, overrides, setField, setOverride, clearOverride } = useCalculatorStore();
   return (
     <SectionCard id="section-3" title="Layout & Quantity" index={2} defaultOpen completion={completion}
       subtitle={calc ? `${calc.grossSheets} gross sheets` : undefined}>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <CalculatedEditableField
+      {/* Row 1 — inputs side by side */}
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <AnimatedInput
           label="Ups per Sheet"
-          calculatedValue={calc?.upsPerSheet || 0}
-          overrideValue={overrides?.upsPerSheet}
-          onOverride={v => setOverride('upsPerSheet', v)}
-          onReset={() => clearOverride('upsPerSheet')}
-          tooltip="Floor(Master Length ÷ Flat Length) × Floor(Master Width ÷ Flat Width)"
+          value={overrides?.upsPerSheet ?? (calc?.upsPerSheet || '')}
+          onChange={v => setOverride('upsPerSheet', parseFloat(v) || 0)}
+          type="number"
+          placeholder="0"
           data-testid="ups-per-sheet"
         />
+        <AnimatedInput
+          label="Platen Wastage %"
+          value={platenWastage ? +(platenWastage * 100).toFixed(4) : 0}
+          onChange={v => setField('platenWastage', parseFloat(v) / 100 || 0)}
+          type="number"
+          unit="%"
+          placeholder="5"
+          data-testid="wastage-input"
+        />
+      </div>
+
+      {/* Row 2 — calculated fields side by side */}
+      <div className="grid grid-cols-2 gap-4">
         <CalculatedEditableField
           label="Net Sheets Required"
           calculatedValue={calc?.netSheets || 0}
           overrideValue={overrides?.netSheets}
           onOverride={v => setOverride('netSheets', v)}
           onReset={() => clearOverride('netSheets')}
-          tooltip="RoundUp(Order Qty ÷ Ups per Sheet)"
+          formulaTooltip="RoundUp(Order Qty ÷ Ups per Sheet)"
           data-testid="net-sheets"
         />
-        <AnimatedInput label="Platen Wastage %" value={wastage} onChange={v => setField('wastage', v)} type="number" unit="%" placeholder="5" data-testid="wastage-input" />
         <CalculatedEditableField
           label="Gross Sheets Needed"
           calculatedValue={calc?.grossSheets || 0}
           overrideValue={overrides?.grossSheets}
           onOverride={v => setOverride('grossSheets', v)}
           onReset={() => clearOverride('grossSheets')}
-          tooltip="RoundUp(Net Sheets × (1 + Wastage %))"
+          formulaTooltip="RoundUp(Net Sheets × (1 + Wastage %))"
           data-testid="gross-sheets"
         />
       </div>

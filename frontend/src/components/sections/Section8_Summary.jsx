@@ -16,28 +16,30 @@ const ResultRow = ({ label, value, highlight, testId }) => (
 
 const Section8 = ({ completion, calc }) => {
   const { margin, gst, setField } = useCalculatorStore();
-  const marginWarn = parseFloat(margin) > 80 ? 'Margin above 80% — is this intentional?' : undefined;
+  const marginPct = margin * 100;
+  const gstPct = gst * 100;
+  const marginWarn = marginPct > 80 ? 'Margin above 80% — is this intentional?' : undefined;
 
   return (
     <SectionCard id="section-8" title="Final Summary & Pricing" index={7} completion={completion}
-      subtitle={calc ? formatINR(calc.finalTotal) : undefined}>
+      subtitle={calc ? formatINR(calc.grandTotal) : undefined}>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <AnimatedInput
               label="Desired Profit Margin %"
-              value={margin}
-              onChange={v => setField('margin', v)}
+              value={marginPct || ''}
+              onChange={v => setField('margin', parseFloat(v) / 100 || 0)}
               type="number"
               unit="%"
-              placeholder="30"
+              placeholder="20"
               error={marginWarn}
               data-testid="margin-input"
             />
             <AnimatedInput
               label="GST %"
-              value={gst}
-              onChange={v => setField('gst', v)}
+              value={gstPct || ''}
+              onChange={v => setField('gst', parseFloat(v) / 100 || 0)}
               type="number"
               unit="%"
               placeholder="18"
@@ -49,9 +51,9 @@ const Section8 = ({ completion, calc }) => {
             <ResultRow label="Total Production Cost" value={formatINR(calc?.totalProductionCost)} testId="production-cost-display" />
             <ResultRow label="Cost Per Unit" value={formatINR(calc?.costPerUnit)} testId="cost-per-unit-display" />
             <ResultRow label="Selling Price / Unit" value={formatINR(calc?.sellingPricePerUnit)} testId="selling-price-display" />
-            <ResultRow label="Subtotal Quote Value" value={formatINR(calc?.subtotal)} testId="subtotal-display" />
-            <ResultRow label={`GST (${gst || 18}%)`} value={formatINR((calc?.subtotal || 0) * (parseFloat(gst) / 100))} testId="gst-amount-display" />
-            <ResultRow label="Grand Total w/ GST" value={formatINR(calc?.finalTotal)} highlight testId="final-total-display" />
+            <ResultRow label="Subtotal Quote Value" value={formatINR(calc?.totalQuoteValue)} testId="subtotal-display" />
+            <ResultRow label={`GST (${gstPct || 18}%)`} value={formatINR(calc?.gstAmount)} testId="gst-amount-display" />
+            <ResultRow label="Grand Total w/ GST" value={formatINR(calc?.grandTotal)} highlight testId="final-total-display" />
           </div>
         </div>
 

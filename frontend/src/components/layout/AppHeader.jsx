@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Sun, Moon, Plus, RotateCcw, User, ChevronDown } from 'lucide-react';
+import { Clock, Plus, RotateCcw, User, ChevronDown } from 'lucide-react';
 import useClientStore from '../../store/clientStore';
 import useCalculatorStore from '../../store/calculatorStore';
 import { saveQuotation } from '../../lib/db';
 import { generateQuoteNumber } from '../../lib/calc';
+import DarkModeToggle from '../ui/DarkModeToggle';
+import logoCopper from '../../assets/logo-copper.png';
 
 const SaveDot = ({ isSaving, lastSavedAt }) => {
   const [dotClass, setDotClass] = useState('');
@@ -38,20 +40,48 @@ const timeAgo = (dateStr) => {
   return `${Math.floor(mins / 60)}h ago`;
 };
 
-const AppHeader = ({ onHistory, onSwitchClient, onNewQuote, darkMode, onToggleDark }) => {
+const AppHeader = ({ onHistory, onSwitchClient, onNewQuote }) => {
   const { selectedClient, isSaving, lastSavedAt, currentQuoteNumber } = useClientStore();
+
+  const headerStyle = {
+    background: 'var(--header-bg)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    borderBottom: '1px solid var(--header-border)',
+    boxShadow: '0 1px 0 rgba(0,0,0,0.06)',
+  };
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-30 h-14 flex items-center px-6 gap-4 glass-light border-b border-[var(--border)]"
+      className="sticky top-0 left-0 right-0 z-30 h-14 flex items-center px-6 gap-4"
+      style={headerStyle}
       data-testid="app-header"
     >
       {/* Logo */}
-      <div className="flex items-center gap-2 mr-4">
-        <div className="w-7 h-7 rounded-md bg-[var(--copper)] flex items-center justify-center">
-          <span className="text-white text-xs font-bold font-display">D</span>
-        </div>
-        <span className="font-display font-semibold text-sm text-[var(--text-primary)] hidden sm:block">Dat Pack Co.</span>
+      <div style={{ display: 'flex', alignItems: 'center' }} className="mr-4">
+        <img
+          src={logoCopper}
+          alt=""
+          style={{
+            height: '32px',
+            marginRight: '12px',
+            filter: 'brightness(0) invert(0.65) sepia(1) saturate(2.5) hue-rotate(338deg)',
+            opacity: 0.88,
+            flexShrink: 0,
+          }}
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
+        <span style={{
+          fontFamily: "'Cormorant Garamond', serif",
+          fontSize: '1.35rem',
+          fontWeight: 500,
+          letterSpacing: '0.16em',
+          textTransform: 'uppercase',
+          color: 'var(--color-text-primary)',
+          lineHeight: 1,
+        }} className="hidden sm:block">
+          Dat Pack Co.
+        </span>
       </div>
 
       {/* Client + Job */}
@@ -59,7 +89,7 @@ const AppHeader = ({ onHistory, onSwitchClient, onNewQuote, darkMode, onToggleDa
         {selectedClient && (
           <button
             onClick={onSwitchClient}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-primary)] hover:border-[var(--copper)] transition-all"
+            className="shimmer-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-primary)] hover:border-[var(--copper)] transition-all"
             data-clickable data-testid="client-switcher"
           >
             <User size={12} strokeWidth={1.5} className="text-[var(--copper)]" />
@@ -77,7 +107,7 @@ const AppHeader = ({ onHistory, onSwitchClient, onNewQuote, darkMode, onToggleDa
       <div className="flex items-center gap-2">
         <button
           onClick={onHistory}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs hover:border-[var(--copper)] transition-all"
+          className="shimmer-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs hover:border-[var(--copper)] hover:-translate-y-0.5 transition-all"
           data-clickable data-testid="history-btn"
         >
           <Clock size={13} strokeWidth={1.5} className="text-[var(--copper)]" />
@@ -86,7 +116,7 @@ const AppHeader = ({ onHistory, onSwitchClient, onNewQuote, darkMode, onToggleDa
 
         <button
           onClick={onSwitchClient}
-          className="px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs hover:border-[var(--copper)] transition-all hidden sm:block"
+          className="shimmer-btn px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs hover:border-[var(--copper)] hover:-translate-y-0.5 transition-all hidden sm:block"
           data-clickable data-testid="switch-client-btn"
         >
           Switch Client
@@ -101,13 +131,7 @@ const AppHeader = ({ onHistory, onSwitchClient, onNewQuote, darkMode, onToggleDa
           <span className="hidden sm:block">New Quote</span>
         </button>
 
-        <button
-          onClick={onToggleDark}
-          className="p-2 rounded-lg border border-[var(--border)] hover:border-[var(--copper)] transition-all"
-          data-clickable data-testid="dark-mode-toggle"
-        >
-          {darkMode ? <Sun size={14} strokeWidth={1.5} className="text-[var(--copper)]" /> : <Moon size={14} strokeWidth={1.5} />}
-        </button>
+        <DarkModeToggle />
       </div>
     </header>
   );

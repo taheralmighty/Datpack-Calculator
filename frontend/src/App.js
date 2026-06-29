@@ -69,9 +69,8 @@ const Toast = ({ message, type = 'info' }) => (
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     exit={{ opacity: 0, y: 20 }}
-    className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl text-sm font-medium shadow-xl z-50 ${
-      type === 'error' ? 'bg-red-500 text-white' : 'bg-[#1A1A1A] text-white'
-    }`}
+    className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl text-sm font-medium shadow-xl z-50 ${type === 'error' ? 'bg-red-500 text-white' : 'bg-[#1A1A1A] text-white'
+      }`}
     data-testid="toast"
   >
     {message}
@@ -80,9 +79,6 @@ const Toast = ({ message, type = 'info' }) => (
 
 // ─── Main App ──────────────────────────────────────────
 function AppInner() {
-  const [darkMode, setDarkMode] = useState(false);
-  const [showClientModal, setShowClientModal] = useState(true);
-  const [showHistory, setShowHistory] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
   const [toast, setToast] = useState(null);
   const [activeSection, setActiveSection] = useState('section-1');
@@ -92,16 +88,16 @@ function AppInner() {
   const clientStore = useClientStore();
   const calc = calcAll(calcStore);
 
+  // Bind modal/history to clientStore so ClientSelectionModal and App stay in sync
+  const isClientModalOpen = clientStore.isClientModalOpen;
+  const isHistoryOpen = clientStore.isHistoryOpen;
+  const setClientModalOpen = clientStore.setClientModalOpen;
+  const setHistoryOpen = clientStore.setHistoryOpen;
+
   const showToast = (msg, type = 'info') => {
     setToast({ message: msg, type });
     setTimeout(() => setToast(null), 3000);
   };
-
-  // ── Dark mode ─────────────────────────────────────────
-  useEffect(() => {
-    if (darkMode) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }, [darkMode]);
 
   // ── Auto-save ─────────────────────────────────────────
   useEffect(() => {
@@ -166,6 +162,7 @@ function AppInner() {
   };
 
   // ── Client Selection ──────────────────────────────────
+  // Legacy — kept for any remaining direct calls from history drawer etc.
   const handleClientSelect = (client, quotation, openHistory = false) => {
     clientStore.setClient(client);
     if (quotation) {
@@ -175,8 +172,8 @@ function AppInner() {
       calcStore.resetCalculator();
       calcStore.setField('clientName', client.name);
     }
-    setShowClientModal(false);
-    if (openHistory) setShowHistory(true);
+    setClientModalOpen(false);
+    if (openHistory) setHistoryOpen(true);
   };
 
   // ── New Quote ─────────────────────────────────────────
@@ -184,6 +181,8 @@ function AppInner() {
     if (calcStore.isDirty) { setConfirmNew(true); return; }
     doNewQuote();
   };
+
+  const handleSwitchClient = () => setClientModalOpen(true);
 
   const doNewQuote = () => {
     calcStore.resetCalculator();
@@ -196,7 +195,7 @@ function AppInner() {
   const handleExportPDF = async () => {
     const state = calcStore.getSerializable();
     const qNum = clientStore.currentQuoteNumber || generateQuoteNumber();
-    generatePDF({ ...state, _quoteNumber: qNum }, clientStore.selectedClient);
+    await generatePDF({ ...state, _quoteNumber: qNum }, clientStore.selectedClient);
     // Tag save with PDF Generated
     if (clientStore.selectedClient) {
       await doAutoSave();
@@ -219,12 +218,12 @@ function AppInner() {
       },
       { rootMargin: '-30% 0px -60% 0px' }
     );
-    ['section-1','section-2','section-3','section-4','section-5','section-6','section-7','section-8','section-9'].forEach(id => {
+    ['section-1', 'section-2', 'section-3', 'section-4', 'section-5', 'section-6', 'section-7', 'section-8', 'section-9'].forEach(id => {
       const el = document.getElementById(id);
       if (el) observer.observe(el);
     });
     return () => observer.disconnect();
-  }, [showClientModal]);
+  }, [isClientModalOpen]);
 
   // ── Completion States ─────────────────────────────────
   const completions = {
@@ -240,26 +239,42 @@ function AppInner() {
   };
 
   return (
-    <div className={`min-h-screen bg-[var(--bg)] transition-colors duration-300 ${darkMode ? 'dark' : ''}`}>
-      <CustomCursor />
+    <div className="min-h-screen transition-colors duration-300">
 
-      {/* Client Selection Modal */}
-      <ClientSelectionModal
-        isOpen={showClientModal}
-        onSelect={handleClientSelect}
-      />
-
-      {/* Main App (when client selected) */}
-      {!showClientModal && (
+      {/* Main App — renders whenever a client is selected */}
+      {clientStore.selectedClient && (
         <>
           <AppHeader
-            onHistory={() => setShowHistory(true)}
-            onSwitchClient={() => setShowClientModal(true)}
+            onHistory={() => setHistoryOpen(true)}
+            onSwitchClient={handleSwitchClient}
             onNewQuote={handleNewQuote}
-            darkMode={darkMode}
-            onToggleDark={() => setDarkMode(!darkMode)}
           />
-          <Sidebar activeSection={activeSection} completions={completions} calc={calc} />
+          <Sidebar
+            activeSection={parseInt(activeSection.replace('section-', ''), 10)}
+            onSectionClick={(id) => {
+              setActiveSection(`section-${id}`);
+              const el = document.getElementById(`section-${id}`);
+              if (el) {
+                const top = el.getBoundingClientRect().top + window.scrollY - 72;
+                window.scrollTo({ top, behavior: 'smooth' });
+              }
+            }}
+            sectionCompletion={{
+              1: completions['section-1'],
+              2: completions['section-2'],
+              3: completions['section-3'],
+              4: completions['section-4'],
+              5: completions['section-5'],
+              6: completions['section-6'],
+              7: completions['section-7'],
+              8: completions['section-8'],
+              9: completions['section-9'],
+            }}
+            sectionSubtotals={{
+              4: calc.paperCost,
+              8: calc.finalTotal,
+            }}
+          />
 
           <main className="lg:ml-[240px] pt-14 pb-20 min-h-screen">
             <div className="max-w-3xl mx-auto px-4 py-8">
@@ -289,11 +304,16 @@ function AppInner() {
           />
 
           <QuotationHistoryDrawer
-            isOpen={showHistory}
-            onClose={() => setShowHistory(false)}
+            isOpen={isHistoryOpen}
+            onClose={() => setHistoryOpen(false)}
           />
         </>
       )}
+
+      {/* Client Selection Modal — overlays on top, controlled by store */}
+      <AnimatePresence>
+        {isClientModalOpen && <ClientSelectionModal />}
+      </AnimatePresence>
 
       {/* Confirm New Quote Modal */}
       {confirmNew && (
@@ -308,6 +328,9 @@ function AppInner() {
       <AnimatePresence>
         {toast && <Toast key="toast" message={toast.message} type={toast.type} />}
       </AnimatePresence>
+
+      {/* Custom cursor rendered last so it paints above all modals/overlays */}
+      <CustomCursor />
     </div>
   );
 }

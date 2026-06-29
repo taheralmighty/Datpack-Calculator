@@ -65,6 +65,7 @@ export const saveQuotation = hasSupabase ? async (data) => {
 export const deleteQuotation = hasSupabase ? async (id) => {
   const { error } = await supabase.from('quotations').delete().eq('id', id);
   if (error) throw error;
+  return { success: true };
 } : local.deleteQuotation;
 
 export const duplicateQuotation = hasSupabase ? async (id) => {
@@ -81,3 +82,15 @@ export const duplicateQuotation = hasSupabase ? async (id) => {
   if (error) throw error;
   return copy;
 } : local.duplicateQuotation;
+
+export const getAllQuotations = hasSupabase ? async () => {
+  const { data, error } = await supabase
+    .from('quotations')
+    .select('*, clients(name)')
+    .order('updated_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return (data || []).map(q => ({ ...q, clientName: q.clients?.name || '' }));
+} : local.getAllQuotations;
+
+export { createClient_ as createClient };

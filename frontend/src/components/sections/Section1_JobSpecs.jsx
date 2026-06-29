@@ -13,8 +13,8 @@ const Section1 = ({ completion }) => {
         <AnimatedInput label="Job Name" value={jobName} onChange={v => setField('jobName', v)} placeholder="e.g. Diwali Box" required data-testid="job-name-input" />
         <AnimatedInput label="Order Quantity" value={orderQty} onChange={v => setField('orderQty', v)} type="number" placeholder="5000" unit="pcs" required data-testid="order-qty-input" />
         <div className="grid grid-cols-2 gap-3">
-          <AnimatedInput label="Flat Length" value={flatLength} onChange={v => setField('flatLength', v)} type="number" unit="mm" placeholder="200" data-testid="flat-length-input" />
-          <AnimatedInput label="Flat Width" value={flatWidth} onChange={v => setField('flatWidth', v)} type="number" unit="mm" placeholder="150" data-testid="flat-width-input" />
+          <AnimatedInput label="Flat Length" value={flatLength} onChange={v => setField('flatLength', v)} type="number" unit="in" placeholder="8" data-testid="flat-length-input" />
+          <AnimatedInput label="Flat Width" value={flatWidth} onChange={v => setField('flatWidth', v)} type="number" unit="in" placeholder="6" data-testid="flat-width-input" />
         </div>
       </div>
     </SectionCard>
