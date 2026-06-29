@@ -1,4 +1,20 @@
--e 
 # Environment files
 *.env
 *.env.*
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Copy/temp files
+*copy*.jsx
+*copy*.js
+frontend/src/components/ui/test.jsx
+frontend/src/lib/test.js
+
+# Build output
+frontend/build/
+
+# OS
+.DS_Store
+Thumbs.db
