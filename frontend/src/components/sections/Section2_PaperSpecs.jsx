@@ -3,8 +3,8 @@ import SectionCard from '../ui/SectionCard';
 import AnimatedInput from '../ui/AnimatedInput';
 import useCalculatorStore from '../../store/calculatorStore';
 
-const Section2 = ({ completion }) => {
-  const { masterLength, masterWidth, gsm, setField } = useCalculatorStore();
+const PaperSpecs = ({ completion }) => {
+  const { masterLength, masterWidth, gsm, paperRate, platenWastage, setField } = useCalculatorStore();
   const gsmWarn = gsm && (parseFloat(gsm) < 60 || parseFloat(gsm) > 450) ? 'GSM is typically between 60–450' : undefined;
   return (
     <SectionCard id="section-2" title="Paper Specifications" index={1} defaultOpen completion={completion}
@@ -14,9 +14,12 @@ const Section2 = ({ completion }) => {
         <AnimatedInput label="Master Sheet Width" value={masterWidth} onChange={v => setField('masterWidth', v)} type="number" unit="in" placeholder="20" data-testid="master-width-input" />
         <AnimatedInput label="Paper GSM" value={gsm} onChange={v => setField('gsm', v)} type="number" placeholder="300" unit="gsm"
           error={gsmWarn} data-testid="gsm-input" />
+        <AnimatedInput label="Paper Rate per kg (₹)" value={paperRate} onChange={v => setField('paperRate', v)} type="number" unit="₹/kg" data-testid="paper-rate-input" />
+        <AnimatedInput label="Platen Wastage %" value={platenWastage ? +(platenWastage * 100).toFixed(4) : 0}
+          onChange={v => setField('platenWastage', parseFloat(v) / 100 || 0)} type="number" unit="%" data-testid="wastage-input" />
       </div>
     </SectionCard>
   );
 };
 
-export default Section2;
+export default PaperSpecs;

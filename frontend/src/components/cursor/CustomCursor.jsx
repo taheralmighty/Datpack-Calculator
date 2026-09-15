@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
+import { useReducedMotion } from 'framer-motion';
 
 // Lerp factor — higher = faster ring catch-up (0.12 ≈ 80ms feel, 0.18 feels snappier)
 const LERP = 0.18;
 
 export default function CustomCursor() {
+  const reducedMotion = useReducedMotion();
   // Skip on touch/mobile devices
-  if (window.matchMedia('(pointer: coarse)').matches) return null;
+  if (reducedMotion || window.matchMedia('(pointer: coarse)').matches) return null;
 
   return <CursorImpl />;
 }
@@ -18,6 +20,7 @@ function CursorImpl() {
     const dot = dotRef.current;
     const ring = ringRef.current;
     if (!dot || !ring) return;
+    document.documentElement.classList.add('custom-cursor-active');
 
     // Current real mouse position (dot)
     let mx = -200, my = -200;
@@ -73,6 +76,7 @@ function CursorImpl() {
     window.addEventListener('mouseover', onMouseOver, { passive: true });
 
     return () => {
+      document.documentElement.classList.remove('custom-cursor-active');
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseover', onMouseOver);
       cancelAnimationFrame(rafId);

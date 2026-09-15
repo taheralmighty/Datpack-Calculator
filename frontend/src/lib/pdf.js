@@ -1,7 +1,9 @@
-﻿import { jsPDF } from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { calcAll } from '../store/calculatorStore';
-import logoSrc from '../assets/logo-copper.png';
+import { calcAll, migrateState, documentPricing, MACHINE_SIZES, LAMINATION_OPTIONS, FOILING_SIZES, UV_OPTIONS, PASTING_OPTIONS } from './calc';
+import { assertExportable } from './validation';
+import { loadPDFLogo } from './pdfLogo';
+import { registerPDFFont } from './pdfFont';
 
 /* ─────────────────────────────────────────────────────────────
    COLOURS  (RGB arrays for jsPDF)
@@ -20,7 +22,7 @@ const MR = 196;               // right edge (W - ML)
    LOCAL MONEY FORMATTER
 ───────────────────────────────────────────────────────────── */
 function pdfMoney(n) {
-  if (!n || isNaN(n) || n === 0) return 'Rs. --';
+  if (n == null || !Number.isFinite(Number(n))) return 'Rs. --';
   return 'Rs. ' + Number(n).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -44,39 +46,25 @@ const rightText = (doc, text, x, y) => doc.text(text, x, y, { align: 'right' });
 /* ─────────────────────────────────────────────────────────────
    MAIN EXPORT
 ───────────────────────────────────────────────────────────── */
-export async function generatePDF(state, client, logoBase64) {
-  const calc = calcAll(state);
+export async function generatePDF(state, client, logoBase64, version = 1) {
+  state = migrateState(state);
+  assertExportable(state);
+  const snapshot = state.issueSnapshot;
+  if (snapshot) state = { ...snapshot.state, _quoteNumber: state._quoteNumber };
+  const calc = snapshot?.calc || calcAll(state);
+  const pricing = documentPricing(state, calc);
 
   // Resolve client name
-  const clientName = (client && client.name)
-    ? client.name
-    : (state.clientName || 'Client Name');
+  const clientName = state.clientName || client?.name || 'Client Name';
 
   // ── Load logo (from import if not supplied as base64) ──
-  let resolvedLogo = logoBase64 || null;
-  if (!resolvedLogo && logoSrc) {
-    try {
-      const img = new Image();
-      img.src = logoSrc;
-      await new Promise((res) => { img.onload = res; img.onerror = res; });
-      const c = document.createElement('canvas');
-      c.width = img.naturalWidth || 64;
-      c.height = img.naturalHeight || 64;
-      c.getContext('2d').drawImage(img, 0, 0);
-      resolvedLogo = c.toDataURL('image/png');
-    } catch (e) { /* silent — no logo */ }
-  }
+  const resolvedLogo = logoBase64 ? { data: logoBase64, width: 14, height: 14 } : await loadPDFLogo();
 
   /* ── section guards ── */
-  const hasSec4 = state.paperRate > 0;
-  const hasSec5 = state.clickCharge > 0 || state.lamRate > 0;
-  const hasSec6 = state.foilLength > 0 || state.uvScreenCost > 0;
-  const hasSec7 = state.punchingRate > 0 || state.pastingRate > 0;
-  const hasRepeat = state.isRepeatOrder === true;
-  const hasBreakdown = hasSec4 || hasSec5 || hasSec6 || hasSec7;
-  const hasTooling = (calc.oneTimeTooling || 0) > 0;
+  const hasBreakdown = calc.breakdown.length > 0;
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const unicode = await registerPDFFont(doc, `${clientName} ${state.jobName || ''}`);
   const qNum = state._quoteNumber || state.quoteNumber || 'QT-DRAFT';
   let y = 0;
 
@@ -92,7 +80,7 @@ export async function generatePDF(state, client, logoBase64) {
 
   // ── LEFT: Logo + Company Name ──
   if (resolvedLogo) {
-    doc.addImage(resolvedLogo, 'PNG', ML, y, 14, 14);
+    doc.addImage(resolvedLogo.data, 'PNG', ML, y, 14 * resolvedLogo.width / resolvedLogo.height, 14, undefined, 'FAST');
     const nameX = ML + 18;
     fnt(doc, 13, 'helvetica', 'bold'); tc(doc, BK);
     doc.setCharSpace(0.8);
@@ -138,8 +126,8 @@ export async function generatePDF(state, client, logoBase64) {
   doc.text('QUOTATION', ML, y + 8);
 
   fnt(doc, 7.5, 'helvetica', 'normal'); tc(doc, GR);
-  doc.text(qNum, ML, y + 15);
-  doc.text('Date: ' + today(), ML, y + 19.5);
+  doc.text(qNum + ' | Version ' + version, ML, y + 15);
+  doc.text('Issued: ' + (state.issuedAt ? new Date(state.issuedAt).toLocaleDateString('en-IN') : 'Not issued'), ML, y + 19.5);
   fnt(doc, 7, 'helvetica', 'italic'); tc(doc, GR);
   doc.text('Valid for 30 days from date of issue.', ML, y + 24);
 
@@ -179,15 +167,20 @@ export async function generatePDF(state, client, logoBase64) {
      SECTION 3 — QUOTE LINE ITEMS TABLE
   ════════════════════════════════════════════════════════ */
 
-  const fL = state.flatLength || 0;
-  const fW = state.flatWidth || 0;
   const gsm = state.gsm || 0;
   const descLine1 = 'Custom Packaging Box';
-  const descLine2 = fL + ' x ' + fW + ' in  |  ' + gsm + ' GSM  |  Qty: ' + qty + ' pcs';
+  const descLine2 = gsm + ' GSM  |  Qty: ' + qty + ' pcs';
+  const selections = [
+    MACHINE_SIZES[state.machineSize]?.label,
+    LAMINATION_OPTIONS[state.laminationType]?.label,
+    FOILING_SIZES[state.foilingSize] ? 'Foiling: ' + FOILING_SIZES[state.foilingSize].label : '',
+    UV_OPTIONS[state.uvType]?.label,
+    PASTING_OPTIONS[state.pastingType]?.label,
+  ].filter(Boolean).join(' | ');
 
   autoTable(doc, {
     startY: y,
-    margin: { left: ML, right: ML },
+    margin: { left: ML, right: ML, bottom: 26, top: 14 },
     columns: [
       { header: '#', dataKey: 'no' },
       { header: 'Description', dataKey: 'desc' },
@@ -197,11 +190,11 @@ export async function generatePDF(state, client, logoBase64) {
     ],
     body: [{
       no: '01',
-      desc: descLine1 + '\n' + (jobName ? jobName + '\n' : '') + descLine2,
+      desc: clientName + '\n' + descLine1 + '\n' + (jobName ? jobName + '\n' : '') + descLine2 + (selections ? '\n' + selections : ''),
       qty: qty,
-      unit: pdfMoney(calc.sellingPricePerUnit),
-      total: pdfMoney(calc.totalQuoteValue),
-    }],
+      unit: pdfMoney(pricing.unitPrice),
+      total: pdfMoney(pricing.extension),
+    }, ...(pricing.rateAdjustment ? [{ no: '', desc: 'Rate rounding adjustment (full-precision quotation total)', qty: '', unit: '', total: pdfMoney(pricing.rateAdjustment) }] : [])],
     headStyles: {
       fillColor: BK, textColor: WH,
       fontSize: 8.5, fontStyle: 'bold',
@@ -215,7 +208,7 @@ export async function generatePDF(state, client, logoBase64) {
     alternateRowStyles: { fillColor: LGR },
     columnStyles: {
       no: { halign: 'center', cellWidth: 10 },
-      desc: { halign: 'left', cellWidth: 'auto' },
+      desc: { halign: 'left', cellWidth: 'auto', ...(unicode ? { font: 'NotoDevanagari', fontStyle: 'normal' } : {}) },
       qty: { halign: 'center', cellWidth: 22 },
       unit: { halign: 'right', cellWidth: 30 },
       total: { halign: 'right', cellWidth: 30 },
@@ -268,19 +261,16 @@ export async function generatePDF(state, client, logoBase64) {
     doc.line(ML, y + 5.5, ML + 44, y + 5.5);
     y += 10;
 
-    const marginPct = Math.round((state.margin || 0.20) * 100);
-    const rows = [];
-    if (hasSec4) rows.push(['Paper & Materials', pdfMoney(calc.totalPaperCost)]);
-    if (hasSec5) rows.push(['Printing & Lamination', pdfMoney(calc.totalPrintCost + calc.totalLamCost)]);
-    if (hasSec6) rows.push(['Premium Finishes (Foiling / Spot UV)', pdfMoney(calc.totalFoilingCost + calc.totalSpotUVCost)]);
-    if (hasSec7) rows.push(['Finishing (Die-cutting / Pasting)', pdfMoney(calc.totalDieCuttingCost + calc.totalPastingCost)]);
+    const marginPct = +(Number(state.margin || 0) * 100).toFixed(4);
+    const rows = pricing.costs.map(item => [item.name, pdfMoney(item.value)]);
+    if (pricing.costAdjustment) rows.push(['Cost rounding adjustment', pdfMoney(pricing.costAdjustment)]);
     const totalRow = rows.length;
     rows.push(['Total Production Cost', pdfMoney(calc.totalProductionCost)]);
     rows.push(['Margin Applied', marginPct + '%']);
 
     autoTable(doc, {
       startY: y,
-      margin: { left: ML, right: ML },
+      margin: { left: ML, right: ML, bottom: 26, top: 14 },
       body: rows,
       showHead: false,
       styles: {
@@ -308,45 +298,22 @@ export async function generatePDF(state, client, logoBase64) {
   }
 
   /* ════════════════════════════════════════════════════════
-     SECTION 5 — TOOLING BLOCK (conditional)
-  ════════════════════════════════════════════════════════ */
-  if (hasTooling) {
-    const bH = 17;
-    checkPageBreak(bH + 10);
-    doc.setFillColor(...CUL);
-    doc.roundedRect(ML, y, W - ML * 2, bH, 3, 3, 'F');
-
-    dc(doc, CU); lw(doc, 2);
-    doc.line(ML + 1, y + 2, ML + 1, y + bH - 2);
-    lw(doc, 0.3);
-
-    fnt(doc, 8, 'helvetica', 'bold'); tc(doc, BK);
-    doc.text('One-Time Tooling Setup', ML + 6, y + 7);
-    fnt(doc, 7, 'helvetica', 'italic'); tc(doc, GR);
-    doc.text('Foil blocks, UV screens, wooden dies  --  deducted in full on all repeat orders.', ML + 6, y + 12.5);
-
-    fnt(doc, 9, 'helvetica', 'bold'); tc(doc, CU);
-    doc.text(pdfMoney(calc.oneTimeTooling), MR - 2, y + 9.5, { align: 'right' });
-
-    y += bH + 8;
-  }
-
-  /* ════════════════════════════════════════════════════════
      SECTION 6 — PRICING SUMMARY (right-aligned)
   ════════════════════════════════════════════════════════ */
-  const gstPct = Math.round((state.gst || 0.18) * 100);
+  const gstPct = +(Number(state.gst || 0) * 100).toFixed(4);
   const sumX = W / 2 + 14;
   const sumW = MR - sumX;
 
   checkPageBreak(45);
   autoTable(doc, {
     startY: y,
-    margin: { left: sumX, right: ML },
+    margin: { left: sumX, right: ML, bottom: 26, top: 14 },
     tableWidth: sumW,
     body: [
       ['Subtotal', pdfMoney(calc.totalQuoteValue)],
       ['GST (' + gstPct + '%)', pdfMoney(calc.gstAmount)],
       ['Grand Total', pdfMoney(calc.grandTotal)],
+      ...(pricing.taxAdjustment ? [['Tax rounding adjustment included', pdfMoney(pricing.taxAdjustment)]] : []),
     ],
     showHead: false,
     styles: {
@@ -377,45 +344,13 @@ export async function generatePDF(state, client, logoBase64) {
   y = doc.lastAutoTable.finalY + 8;
 
   /* ════════════════════════════════════════════════════════
-     SECTION 7 — REPEAT ORDER (conditional)
-  ════════════════════════════════════════════════════════ */
-  if (hasRepeat) {
-    const bH = 30;
-    checkPageBreak(bH + 10);
-
-    doc.setFillColor(...CUL);
-    doc.setDrawColor(...CU); lw(doc, 0.5);
-    doc.roundedRect(ML, y, W - ML * 2, bH, 3, 3, 'FD');
-
-    fnt(doc, 8, 'helvetica', 'bold'); tc(doc, CU);
-    doc.text('REPEAT ORDER PRICING', ML + 6, y + 8);
-    fnt(doc, 7, 'helvetica', 'italic'); tc(doc, GR);
-    doc.text('One-time tooling charges excluded from repeat orders.', ML + 6, y + 13);
-
-    fnt(doc, 7.5, 'helvetica', 'normal'); tc(doc, GR);
-    doc.text('Subtotal (excl. tooling):', ML + 6, y + 19);
-    doc.text('GST (' + gstPct + '%):', ML + 6, y + 23);
-
-    fnt(doc, 8, 'helvetica', 'bold'); tc(doc, CU);
-    doc.text('Repeat Grand Total:', ML + 6, y + 28);
-
-    fnt(doc, 7.5, 'helvetica', 'normal'); tc(doc, GR);
-    doc.text(pdfMoney(calc.repeatQuoteValue), MR - 4, y + 19, { align: 'right' });
-    doc.text(pdfMoney(calc.repeatGSTAmount), MR - 4, y + 23, { align: 'right' });
-    fnt(doc, 8, 'helvetica', 'bold'); tc(doc, CU);
-    doc.text(pdfMoney(calc.repeatGrandTotal), MR - 4, y + 28, { align: 'right' });
-
-    y += bH + 8;
-  }
-
-  /* ════════════════════════════════════════════════════════
      SECTION 8 — TERMS & NOTES
   ════════════════════════════════════════════════════════ */
   const notes = [
+    'Generated: ' + today() + (state.revisedAt ? ' | Revised: ' + new Date(state.revisedAt).toLocaleDateString('en-IN') : ''),
     'This quotation is valid for 30 days from the date of issue.',
     'Prices are subject to revision based on prevailing material costs at time of order.',
     'GST is applicable as per government regulations at the rate specified above.',
-    'Tooling charges are one-time costs and are fully deductible on all repeat orders.',
   ];
   const noteH = 8 + notes.length * 5;
 
@@ -436,11 +371,18 @@ export async function generatePDF(state, client, logoBase64) {
   ════════════════════════════════════════════════════════ */
   drawFooter();
 
+  if (doc.getNumberOfPages && doc.setPage) {
+    for (let pageNumber = 1; pageNumber <= doc.getNumberOfPages(); pageNumber++) {
+      doc.setPage(pageNumber);
+      drawFooter();
+    }
+  }
+
   /* ════════════════════════════════════════════════════════
      SAVE
   ════════════════════════════════════════════════════════ */
   const safeName = (state.jobName || 'Quote').replace(/[^a-zA-Z0-9]/g, '-');
-  doc.save('DatPackCo_' + safeName + '_' + qNum + '.pdf');
+  doc.save('DatPackCo_' + safeName + '_' + qNum + '_v' + version + '.pdf');
 }
 
 export default generatePDF;

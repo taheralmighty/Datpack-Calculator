@@ -4,28 +4,27 @@
   "private": true,
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
-    "@tanstack/react-query": "^5.96.1",
     "autoprefixer": "^10.4.27",
     "framer-motion": "^11.18.2",
-    "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
-    "lodash": "^4.17.23",
     "lucide-react": "^0.321.0",
-    "next-themes": "^0.4.6",
     "papaparse": "^5.5.3",
     "postcss": "^8.5.8",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "^5.0.1",
-    "recharts": "^2.15.4",
     "tailwindcss": "^3.4.1",
     "zustand": "^4.5.7"
   },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test"
+    "test": "react-scripts test",
+    "lint": "eslint src --ext .js,.jsx",
+    "test:database": "node scripts/test-database.cjs",
+    "test:browser": "playwright test",
+    "audit:reviewed": "node scripts/audit-reviewed.cjs"
   },
   "browserslist": {
     "production": [
@@ -40,6 +39,10 @@
     ]
   },
   "devDependencies": {
-    "@types/papaparse": "^5.5.2"
+    "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.63.0",
+    "@types/papaparse": "^5.5.2",
+    "eslint": "^8.57.1",
+    "pdfjs-dist": "^6.3.289"
   }
 }

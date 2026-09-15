@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useRef, useEffect, useId } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { HelpCircle } from 'lucide-react';
 
 // ─── Shared tooltip positioning helper ───────────────
@@ -22,10 +23,23 @@ function computeTooltipPos(rect) {
 }
 
 // ─── Tooltip (named export — kept for other components) ──
-export const Tooltip = ({ text, children }) => {
+export const Tooltip = ({ text, children, label }) => {
+  const id = useId();
+  const reducedMotion = useReducedMotion();
   const [show, setShow] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, above: true });
   const triggerRef = useRef(null);
+
+  useEffect(() => {
+    if (!show) return;
+    const hide = () => setShow(false);
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('resize', hide);
+    return () => {
+      window.removeEventListener('scroll', hide, true);
+      window.removeEventListener('resize', hide);
+    };
+  }, [show]);
 
   const handleMouseEnter = () => {
     if (triggerRef.current) {
@@ -37,39 +51,42 @@ export const Tooltip = ({ text, children }) => {
   return (
     <span className="inline-flex items-center gap-1">
       {children}
-      <span
+      <button
         ref={triggerRef}
-        className="inline-flex items-center text-[var(--color-text-secondary)] opacity-50 cursor-default"
+        type="button" aria-label={label ? `Formula for ${label}` : 'Field information'}
+        aria-describedby={show ? id : undefined}
+        className="formula-info inline-flex items-center shrink-0"
         onMouseEnter={handleMouseEnter}
-        onMouseLeave={() => setShow(false)}
+        onMouseLeave={() => { if (document.activeElement !== triggerRef.current) setShow(false); }}
+        onFocus={handleMouseEnter} onBlur={() => setShow(false)}
+        onClick={handleMouseEnter}
+        onKeyDown={event => { if (event.key === 'Escape') setShow(false); }}
       >
         <HelpCircle size={12} strokeWidth={1.5} />
-      </span>
-      <AnimatePresence>
+      </button>
+      {createPortal(<AnimatePresence>
         {show && (
-          <motion.div
-            initial={{ opacity: 0, y: pos.above ? 4 : -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: pos.above ? 4 : -4 }}
-            transition={{ duration: 0.15 }}
-            className="text-xs text-white px-3 py-2 rounded-lg pointer-events-none leading-relaxed"
+          <div
             style={{
               position: 'fixed',
               zIndex: 9999,
-              background: '#1A1A1A',
               top: pos.top,
               left: pos.left,
               transform: pos.above ? 'translateY(-100%)' : 'translateY(0)',
-              minWidth: '200px',
-              maxWidth: '300px',
+              width: 'min(300px, calc(100vw - 24px))',
               whiteSpace: 'normal',
               wordBreak: 'break-word',
+              pointerEvents: 'none',
             }}
           >
-            {text}
-          </motion.div>
+            <motion.div id={id} role="tooltip" className="formula-tooltip text-xs px-3 py-2 rounded-lg leading-relaxed"
+              initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              transition={{ duration: reducedMotion ? 0 : 0.13 }}>
+              {text}
+            </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>, document.body)}
     </span>
   );
 };
@@ -88,6 +105,7 @@ const AnimatedInput = ({
   'data-testid': testId,
   className = '',
 }) => {
+  const inputId = useId();
   const wrapperRef = useRef(null);
   const [focused, setFocused] = useState(false);
 
@@ -105,7 +123,7 @@ const AnimatedInput = ({
       {/* Label row */}
       {label && (
         <div className="flex items-center gap-1.5">
-          <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+          <label htmlFor={inputId} className="text-sm font-medium text-[var(--color-text-secondary)]">
             {label}
             {required && <span className="text-red-500 ml-0.5">*</span>}
           </label>
@@ -120,15 +138,18 @@ const AnimatedInput = ({
         style={focused ? { boxShadow: '0 2px 0 0 var(--color-accent)' } : {}}
       >
         <input
+          id={inputId}
           data-testid={testId}
           type={type}
+          required={required} aria-invalid={!!error} aria-describedby={error ? `${inputId}-error` : undefined}
           value={value}
           onChange={e => onChange && onChange(e.target.value)}
           onFocus={handleFocus}
           onBlur={handleBlur}
+          onWheel={type === 'number' ? event => event.currentTarget.blur() : undefined}
           placeholder={placeholder}
           {...(type === 'number' ? { step: 'any', min: '0' } : {})}
-          className={`w-full px-3 py-2.5 text-sm bg-transparent border-b-2 outline-none transition-all duration-200 font-sans
+          className={`underline-input w-full px-3 py-2.5 text-sm bg-transparent border-b-2 outline-none transition-all duration-200 font-sans
             ${error
               ? 'border-red-400'
               : focused
@@ -148,7 +169,7 @@ const AnimatedInput = ({
 
       {/* Error message */}
       {error && (
-        <p className="text-xs text-red-500 mt-1">{error}</p>
+        <p id={`${inputId}-error`} className="text-xs text-red-500 mt-1">{error}</p>
       )}
     </div>
   );

@@ -5,10 +5,10 @@ app = FastAPI(title="Dat Pack Co. Calculator API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=[],
 )
 
 @app.get("/api/health")

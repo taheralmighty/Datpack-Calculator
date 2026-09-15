@@ -1,24 +1,25 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  FileText, Layers, Grid, DollarSign, Printer,
-  Sparkles, Scissors, BarChart2, RefreshCw,
+  FileText, Layers, DollarSign, Printer,
+  Sparkles, Scissors, BarChart2, Droplets, Package,
 } from 'lucide-react';
 
 const ICON_MAP = {
-  FileText, Layers, Grid, DollarSign, Printer,
-  Sparkles, Scissors, BarChart2, RefreshCw,
+  FileText, Layers, DollarSign, Printer,
+  Sparkles, Scissors, BarChart2, Droplets, Package,
 };
 
 const SECTIONS = [
   { id: 1, label: 'Job Specs', icon: 'FileText' },
   { id: 2, label: 'Paper Specs', icon: 'Layers' },
-  { id: 3, label: 'Layout & Qty', icon: 'Grid' },
-  { id: 4, label: 'Paper Cost', icon: 'DollarSign' },
-  { id: 5, label: 'Print & Lam', icon: 'Printer' },
-  { id: 6, label: 'Finishes', icon: 'Sparkles' },
-  { id: 7, label: 'Finishing', icon: 'Scissors' },
-  { id: 8, label: 'Summary', icon: 'BarChart2' },
-  { id: 9, label: 'Repeat Order', icon: 'RefreshCw' },
+  { id: 3, label: 'Paper Cost', icon: 'DollarSign' },
+  { id: 4, label: 'Printing', icon: 'Printer' },
+  { id: 5, label: 'Lamination', icon: 'Layers' },
+  { id: 6, label: 'Foiling', icon: 'Sparkles' },
+  { id: 7, label: 'UV', icon: 'Droplets' },
+  { id: 8, label: 'Die Cutting', icon: 'Scissors' },
+  { id: 9, label: 'Pasting', icon: 'Package' },
+  { id: 10, label: 'Summary', icon: 'BarChart2' },
 ];
 
 const DOT_COLOR = {
@@ -34,12 +35,12 @@ function formatSubtotal(n) {
 
 export default function Sidebar({ activeSection, onSectionClick, sectionSubtotals = {}, sectionCompletion = {} }) {
   const completeCount = Object.values(sectionCompletion).filter(v => v === 'complete').length;
-  const pct = (completeCount / 9) * 100;
+  const pct = (completeCount / SECTIONS.length) * 100;
 
   return (
     <aside
-      className="fixed left-0 top-14 z-20 flex flex-col
-                 w-12 md:w-[240px]
+      className="fixed left-0 top-14 z-20 hidden lg:flex flex-col
+             w-[240px]
                  h-[calc(100vh-56px)] overflow-y-auto
                  border-r border-[var(--color-border)]"
       style={{ background: 'var(--color-bg-secondary)' }}
@@ -70,6 +71,7 @@ export default function Sidebar({ activeSection, onSectionClick, sectionSubtotal
               </AnimatePresence>
 
               <button
+                aria-label={label} title={label}
                 onClick={() => onSectionClick(id)}
                 className={`shimmer-btn w-full flex items-center gap-3 pl-3 pr-2 py-2.5 rounded-lg text-left transition-all duration-150 hover:-translate-y-0.5
                   ${isActive
@@ -103,7 +105,7 @@ export default function Sidebar({ activeSection, onSectionClick, sectionSubtotal
       <div className="hidden md:block p-4 border-t border-[var(--color-border)]">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-xs text-[var(--color-text-secondary)]">Quote Completion</span>
-          <span className="text-xs text-[var(--color-text-secondary)]">{completeCount} of 9</span>
+          <span className="text-xs text-[var(--color-text-secondary)]">{completeCount} of {SECTIONS.length}</span>
         </div>
         <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--color-border)' }}>
           <motion.div
@@ -114,7 +116,7 @@ export default function Sidebar({ activeSection, onSectionClick, sectionSubtotal
           />
         </div>
         <p className="text-xs text-[var(--color-text-secondary)] mt-1.5">
-          {completeCount} of 9 sections complete
+          {completeCount} of {SECTIONS.length} sections complete
         </p>
       </div>
     </aside>

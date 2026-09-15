@@ -1,35 +1,8 @@
-import { useState, useEffect } from 'react';
 import { Sun, Moon } from 'lucide-react';
+import useThemeStore from '../../store/themeStore';
 
 export default function DarkModeToggle() {
-    const [isDark, setIsDark] = useState(() => {
-        return localStorage.getItem('datpack-theme') === 'dark';
-    });
-
-    useEffect(() => {
-        const stored = localStorage.getItem('datpack-theme');
-        if (stored === 'dark') {
-            document.documentElement.classList.add('dark');
-            setIsDark(true);
-        } else {
-            // Explicit light default — saves preference if none exists yet
-            if (!stored) localStorage.setItem('datpack-theme', 'light');
-            document.documentElement.classList.remove('dark');
-            setIsDark(false);
-        }
-    }, []);
-
-    const toggle = () => {
-        if (isDark) {
-            document.documentElement.classList.remove('dark');
-            localStorage.setItem('datpack-theme', 'light');
-            setIsDark(false);
-        } else {
-            document.documentElement.classList.add('dark');
-            localStorage.setItem('datpack-theme', 'dark');
-            setIsDark(true);
-        }
-    };
+    const { isDark, toggle } = useThemeStore();
 
     return (
         <button

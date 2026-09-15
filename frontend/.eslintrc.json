@@ -1,0 +1,4 @@
+{
+  "extends": ["react-app", "react-app/jest"],
+  "settings": { "testing-library/utils-module": "off" }
+}

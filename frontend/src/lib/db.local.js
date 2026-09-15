@@ -1,20 +1,25 @@
+import { migrateState, generateQuoteNumber } from './calc';
+import { readJSON, writeJSON, isRecordArray, isRecord } from './storage';
+import { QuoteConflictError } from './saveCoordinator';
+import { validateQuote } from './validation';
+
 // localStorage adapter — implements same interface as db.js
 const PREFIX = 'datpack_';
 
-const get = (key) => {
-  try { return JSON.parse(localStorage.getItem(PREFIX + key) || 'null'); }
-  catch { return null; }
-};
-const set = (key, val) => localStorage.setItem(PREFIX + key, JSON.stringify(val));
+const get = key => readJSON(PREFIX + key, [], value => isRecordArray(value) && value.every(item =>
+  key === 'clients' ? typeof item.name === 'string' : item.deleted_at || (typeof item.client_id === 'string' && isRecord(item.state))));
+const set = (key, val) => writeJSON(PREFIX + key, val);
 
 const genId = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 
-const clients = () => get('clients') || [];
-const quotations = () => get('quotations') || [];
+const clients = () => get('clients');
+const quotations = () => get('quotations').filter(quote => !quote.deleted_at);
 
 export const getClients = async () => {
-  return clients().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const quotes = quotations();
+  return clients().map(client => ({ ...client, quotationCount: quotes.filter(quote => quote.client_id === client.id).length }))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 };
 
 export const createClient_ = async (data) => {
@@ -36,16 +41,37 @@ export const getQuotation = async (id) => {
 };
 
 export const saveQuotation = async (data) => {
-  const all = quotations();
+  const all = get('quotations');
+  const state = migrateState(data.state);
+  const validation = validateQuote(state);
+  if (validation.status === 'invalid') throw new Error(validation.messages.join(' '));
   const idx = all.findIndex(q => q.id === data.id);
-  const updated = { ...data, updated_at: now() };
-  if (idx >= 0) { all[idx] = updated; } else { all.push({ ...updated, created_at: updated.created_at || now() }); }
+  const previous = all[idx];
+  const expected = data.expected_revision ?? data.revision ?? 0;
+  if (previous?.deleted_at || (previous && previous.client_id !== data.client_id) || expected !== (previous?.revision || 0)) throw new QuoteConflictError();
+  const { expected_revision, ...payload } = data;
+  const quoteNumber = previous?.quote_number || data.quote_number || generateQuoteNumber();
+  if (all.some(quote => quote.id !== data.id && quote.quote_number === quoteNumber && quote.version === (data.version || 1))) {
+    throw new QuoteConflictError('Quotation number already exists. Start a new draft or retry with a new quotation number.');
+  }
+  const updated = {
+    ...payload, id: data.id || genId(), quote_number: quoteNumber, version: data.version || 1,
+    revision: expected + 1, is_repeat_order: false,
+    state,
+    created_at: idx >= 0 ? all[idx].created_at : (data.created_at || now()),
+    updated_at: now(),
+  };
+  if (idx >= 0) { all[idx] = updated; } else { all.push(updated); }
   set('quotations', all);
   return updated;
 };
 
 export const deleteQuotation = async (id) => {
-  set('quotations', quotations().filter(q => q.id !== id));
+  const all = get('quotations');
+  const existing = all.find(quote => quote.id === id);
+  set('quotations', existing
+    ? all.map(quote => quote.id === id ? { ...quote, deleted_at: now(), revision: (quote.revision || 0) + 1 } : quote)
+    : [...all, { id, deleted_at: now(), revision: 1 }]);
   return { success: true };
 };
 
@@ -56,17 +82,18 @@ export const duplicateQuotation = async (id) => {
     ...orig,
     id: genId(),
     job_name: orig.job_name + ' (Copy)',
-    quote_number: 'QT-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + String(Math.floor(Math.random() * 9000) + 1000),
+    quote_number: generateQuoteNumber(),
     version: 1,
+    revision: 0,
+    is_repeat_order: false,
     created_at: now(),
     updated_at: now(),
-    state: { ...orig.state, jobName: (orig.state.jobName || '') + ' (Copy)' },
+    state: { ...migrateState(orig.state), _quoteNumber: null, issueSnapshot: null, issuedAt: null, revisedAt: null, jobName: (orig.state?.jobName || '') + ' (Copy)' },
   };
-  const all = quotations();
-  all.push(copy);
-  set('quotations', all);
-  return copy;
+  return saveQuotation({ ...copy, expected_revision: 0 });
 };
+
+export const getLatestQuotation = async clientId => (await getQuotationsByClient(clientId))[0] || null;
 
 export const getAllQuotations = async () => {
   const allClients = clients();

@@ -1,48 +1,53 @@
 import { create } from 'zustand';
 import { getDefaultState, migrateState, calcAll } from '../lib/calc';
+import { overrideError } from '../lib/validation';
 export { calcAll } from '../lib/calc';
 
 const useCalculatorStore = create((set, get) => ({
   // ─── Calculator State ─────────────────────────────
   ...getDefaultState(),
   isDirty: false,
+  editRevision: 0,
+  validationError: null,
 
   // ─── Setters ──────────────────────────────────────
   setField: (field, value) => set((state) => ({
     [field]: value,
     isDirty: true,
+    editRevision: state.editRevision + 1,
+    ...(state.issueSnapshot && !['issuedAt', 'issueSnapshot'].includes(field) ? { issueSnapshot: null, revisedAt: new Date().toISOString() } : {}),
   })),
 
-  setOverride: (field, value) => set((state) => ({
-    overrides: { ...state.overrides, [field]: value },
-    isDirty: true,
-  })),
+  setOverride: (field, value) => {
+    const error = overrideError(field, value);
+    if (error) { set({ validationError: error }); return; }
+    set(state => ({ overrides: { ...state.overrides, [field]: Number(value) }, validationError: null,
+      isDirty: true, editRevision: state.editRevision + 1, issueSnapshot: null,
+      revisedAt: state.issuedAt ? new Date().toISOString() : state.revisedAt }));
+  },
 
   clearOverride: (field) => set((state) => {
     const overrides = { ...state.overrides };
     delete overrides[field];
-    return { overrides, isDirty: true };
+    return { overrides, isDirty: true, editRevision: state.editRevision + 1, issueSnapshot: null,
+      revisedAt: state.issuedAt ? new Date().toISOString() : state.revisedAt };
   }),
 
-  setIsRepeatOrder: (val) => set({ isRepeatOrder: val, isDirty: true }),
-
   // ─── Load saved state ─────────────────────────────
-  loadState: (saved) => set({ ...migrateState(saved), isDirty: false }),
+  loadState: (saved) => set(state => ({ ...migrateState(saved), isDirty: false, validationError: null, editRevision: state.editRevision + 1 })),
 
   // ─── Reset ────────────────────────────────────────
-  resetCalculator: () => set({ ...getDefaultState(), isDirty: false }),
+  resetCalculator: () => set(state => ({ ...getDefaultState(), isDirty: false, validationError: null, editRevision: state.editRevision + 1 })),
 
   // ─── Mark clean ───────────────────────────────────
-  markClean: () => set({ isDirty: false }),
+  markClean: (revision) => set(state => revision === state.editRevision ? { isDirty: false } : {}),
 
   // ─── Derived computed (called inline) ─────────────
   getCalc: () => calcAll(get()),
 
   // ─── Serialize for save ───────────────────────────
   getSerializable: () => {
-    const s = get();
-    const { isDirty, setField, setOverride, clearOverride, setIsRepeatOrder, loadState, resetCalculator, markClean, getCalc, getSerializable, ...rest } = s;
-    return rest;
+    return migrateState(get());
   },
 
 }));

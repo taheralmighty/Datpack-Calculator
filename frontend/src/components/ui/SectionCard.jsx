@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 
 const DOT_CLASS = {
@@ -26,6 +26,7 @@ const SectionCard = ({
   children,
   index = 0,
 }) => {
+  const reducedMotion = useReducedMotion();
   const isControlled = isOpen !== undefined && onToggle !== undefined;
   const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
 
@@ -37,7 +38,7 @@ const SectionCard = ({
   return (
     <motion.div
       id={id}
-      initial={{ opacity: 0, y: 20 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.08, ease: [0.16, 1, 0.3, 1] }}
       className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] mb-4 overflow-hidden"
@@ -45,6 +46,7 @@ const SectionCard = ({
     >
       {/* ── Header ── */}
       <button
+        type="button" aria-expanded={open} aria-controls={`${id}-content`}
         className="shimmer-btn w-full flex items-center justify-between px-6 py-4 text-left
                    hover:bg-[var(--color-accent-light)] transition-colors duration-200 cursor-pointer"
         onClick={toggle}
@@ -68,7 +70,7 @@ const SectionCard = ({
               {subtotalLabel}
             </span>
           )}
-          <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: reducedMotion ? 0 : 0.2 }}>
             <ChevronDown size={18} strokeWidth={1.5} className="text-[var(--color-text-secondary)]" />
           </motion.div>
         </div>
@@ -79,17 +81,18 @@ const SectionCard = ({
         {open && (
           <motion.div
             key="content"
+            id={`${id}-content`}
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: reducedMotion ? 0 : 0.24, ease: 'easeOut' }}
             style={{ overflow: 'hidden' }}
           >
             <motion.div
               className="px-6 pb-6 pt-2"
-              initial={{ y: 8, opacity: 0 }}
+              initial={{ y: reducedMotion ? 0 : 3, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.25, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: reducedMotion ? 0 : 0.18, ease: 'easeOut' }}
             >
               {children}
             </motion.div>

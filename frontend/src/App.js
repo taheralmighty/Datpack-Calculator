@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion, MotionConfig } from 'framer-motion';
+import Dialog from './components/ui/Dialog';
 
 // Layout
 import CustomCursor from './components/cursor/CustomCursor';
@@ -9,15 +9,16 @@ import Sidebar from './components/layout/Sidebar';
 import SummaryBar from './components/layout/SummaryBar';
 
 // Sections
-import Section1 from './components/sections/Section1_JobSpecs';
-import Section2 from './components/sections/Section2_PaperSpecs';
-import Section3 from './components/sections/Section3_Layout';
-import Section4 from './components/sections/Section4_PaperCost';
-import Section5 from './components/sections/Section5_Printing';
-import Section6 from './components/sections/Section6_Finishes';
-import Section7 from './components/sections/Section7_Finishing';
-import Section8 from './components/sections/Section8_Summary';
-import Section9 from './components/sections/Section9_RepeatOrder';
+import JobSpecs from './components/sections/Section1_JobSpecs';
+import PaperSpecs from './components/sections/Section2_PaperSpecs';
+import PaperCost from './components/sections/Section3_PaperCost';
+import Printing from './components/sections/Section4_Printing';
+import Lamination from './components/sections/Section5_Lamination';
+import Foiling from './components/sections/Section6_Foiling';
+import UV from './components/sections/Section7_UV';
+import DieCutting from './components/sections/Section8_DieCutting';
+import Pasting from './components/sections/Section9_Pasting';
+import Summary from './components/sections/Section10_Summary';
 
 // Client + History
 import ClientSelectionModal from './components/clients/ClientSelectionModal';
@@ -26,12 +27,11 @@ import QuotationHistoryDrawer from './components/history/QuotationHistoryDrawer'
 // Store + Lib
 import useCalculatorStore from './store/calculatorStore';
 import useClientStore from './store/clientStore';
-import { calcAll, generateQuoteNumber } from './lib/calc';
-import { saveQuotation } from './lib/db';
+import { calcAll } from './lib/calc';
 import { generatePDF } from './lib/pdf';
 import { exportCSV } from './lib/csv';
-
-const queryClient = new QueryClient();
+import { assertExportable, validateQuote } from './lib/validation';
+import CalculatedEditableField from './components/ui/CalculatedEditableField';
 
 // ─── Completion Helper ─────────────────────────────────
 const getCompletion = (fields) => {
@@ -42,8 +42,8 @@ const getCompletion = (fields) => {
 };
 
 // ─── Confirm Modal ─────────────────────────────────────
-const ConfirmModal = ({ message, onConfirm, onCancel }) => (
-  <AnimatePresence>
+const ConfirmModal = ({ busy, onSave, onDiscard, onCancel }) => (
+  <Dialog label="Unsaved quotation" onClose={busy ? undefined : onCancel}>
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center"
@@ -53,40 +53,25 @@ const ConfirmModal = ({ message, onConfirm, onCancel }) => (
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl"
         data-testid="confirm-modal"
       >
-        <p className="text-sm text-[var(--text-primary)] mb-5">{message}</p>
+        <p className="text-sm text-[var(--text-primary)] mb-5">Save your changes before continuing?</p>
         <div className="flex gap-3">
-          <button onClick={onConfirm} className="flex-1 py-2.5 bg-[var(--copper)] text-white text-sm rounded-lg font-medium" data-clickable data-testid="confirm-yes">Confirm</button>
-          <button onClick={onCancel} className="flex-1 py-2.5 border border-[var(--border)] text-sm rounded-lg" data-clickable data-testid="confirm-no">Cancel</button>
+          <button disabled={busy} onClick={onSave} className="flex-1 py-2.5 bg-[var(--copper)] text-white text-sm rounded-lg font-medium">{busy ? 'Saving...' : 'Save'}</button>
+          <button disabled={busy} onClick={onDiscard} className="flex-1 py-2.5 border border-[var(--border)] text-sm rounded-lg">Discard</button>
+          <button disabled={busy} onClick={onCancel} className="flex-1 py-2.5 border border-[var(--border)] text-sm rounded-lg" data-testid="confirm-no">Cancel</button>
         </div>
       </motion.div>
     </motion.div>
-  </AnimatePresence>
-);
-
-// ─── Toast ─────────────────────────────────────────────
-const Toast = ({ message, type = 'info' }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0, y: 20 }}
-    className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl text-sm font-medium shadow-xl z-50 ${type === 'error' ? 'bg-red-500 text-white' : 'bg-[#1A1A1A] text-white'
-      }`}
-    data-testid="toast"
-  >
-    {message}
-  </motion.div>
+  </Dialog>
 );
 
 // ─── Main App ──────────────────────────────────────────
 function AppInner() {
-  const [confirmNew, setConfirmNew] = useState(false);
-  const [toast, setToast] = useState(null);
   const [activeSection, setActiveSection] = useState('section-1');
-  const saveTimerRef = useRef(null);
 
   const calcStore = useCalculatorStore();
   const clientStore = useClientStore();
   const calc = calcAll(calcStore);
+  const validation = validateQuote(calcStore);
 
   // Bind modal/history to clientStore so ClientSelectionModal and App stay in sync
   const isClientModalOpen = clientStore.isClientModalOpen;
@@ -94,118 +79,58 @@ function AppInner() {
   const setClientModalOpen = clientStore.setClientModalOpen;
   const setHistoryOpen = clientStore.setHistoryOpen;
 
-  const showToast = (msg, type = 'info') => {
-    setToast({ message: msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
   // ── Auto-save ─────────────────────────────────────────
   useEffect(() => {
-    if (!calcStore.isDirty || !clientStore.selectedClient) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => doAutoSave(), 3000);
-    return () => clearTimeout(saveTimerRef.current);
-  }, [calcStore.isDirty, calcStore.getSerializable()]);
+    if (!calcStore.isDirty || !clientStore.selectedClient || clientStore.saveError || clientStore.pendingTransition) return;
+    const timer = setTimeout(() => useClientStore.getState().saveCurrentQuotation().catch(() => {}), 3000);
+    return () => clearTimeout(timer);
+  }, [calcStore.editRevision, calcStore.isDirty, clientStore.sessionId, clientStore.selectedClient, clientStore.saveError, clientStore.pendingTransition]);
 
-  const doAutoSave = useCallback(async () => {
-    if (!clientStore.selectedClient) return;
-    clientStore.setSaving(true);
-    try {
-      const state = calcStore.getSerializable();
-      const qNum = clientStore.currentQuoteNumber || generateQuoteNumber();
-      const payload = {
-        id: clientStore.currentQuotationId || undefined,
-        client_id: clientStore.selectedClient.id,
-        job_name: state.jobName || 'Untitled',
-        quote_number: qNum,
-        version: clientStore.currentVersion,
-        is_repeat_order: state.isRepeatOrder || false,
-        state: { ...state, _quoteNumber: qNum },
-      };
-      const saved = await saveQuotation(payload);
-      clientStore.setCurrentQuotation(saved);
-      clientStore.setLastSaved(saved.updated_at);
-      calcStore.markClean();
-    } catch (e) {
-      showToast('Save failed — retrying...', 'error');
-    } finally {
-      clientStore.setSaving(false);
-    }
-  }, [calcStore, clientStore]);
+  useEffect(() => {
+    const retry = () => useClientStore.getState().retryConnection();
+    const timer = setInterval(retry, 15000);
+    window.addEventListener('online', retry);
+    return () => { clearInterval(timer); window.removeEventListener('online', retry); };
+  }, []);
 
-  // ── Save Snapshot ─────────────────────────────────────
-  const handleSaveSnapshot = async () => {
-    if (!clientStore.selectedClient) { showToast('Select a client first'); return; }
-    clientStore.setSaving(true);
-    try {
-      const state = calcStore.getSerializable();
-      const qNum = clientStore.currentQuoteNumber || generateQuoteNumber();
-      const nextVersion = clientStore.currentVersion + 1;
-      const payload = {
-        client_id: clientStore.selectedClient.id,
-        job_name: state.jobName || 'Untitled',
-        quote_number: qNum,
-        version: nextVersion,
-        is_repeat_order: state.isRepeatOrder || false,
-        state: { ...state, _quoteNumber: qNum },
-      };
-      const saved = await saveQuotation(payload);
-      clientStore.setCurrentQuotation(saved);
-      clientStore.setLastSaved(saved.updated_at);
-      calcStore.markClean();
-      showToast(`Snapshot v${nextVersion} saved`);
-    } catch (e) {
-      showToast('Snapshot failed', 'error');
-    } finally {
-      clientStore.setSaving(false);
-    }
-  };
+  useEffect(() => {
+    const warn = event => {
+      if (!useCalculatorStore.getState().isDirty) return;
+      useClientStore.getState().persistDraft();
+      event.preventDefault(); event.returnValue = '';
+    };
+    const persist = () => useClientStore.getState().persistDraft();
+    window.addEventListener('beforeunload', warn);
+    window.addEventListener('pagehide', persist);
+    document.addEventListener('visibilitychange', persist);
+    return () => {
+      window.removeEventListener('beforeunload', warn);
+      window.removeEventListener('pagehide', persist);
+      document.removeEventListener('visibilitychange', persist);
+    };
+  }, []);
 
-  // ── Client Selection ──────────────────────────────────
-  // Legacy — kept for any remaining direct calls from history drawer etc.
-  const handleClientSelect = (client, quotation, openHistory = false) => {
-    clientStore.setClient(client);
-    if (quotation) {
-      calcStore.loadState(quotation.state || {});
-      clientStore.setCurrentQuotation(quotation);
-    } else {
-      calcStore.resetCalculator();
-      calcStore.setField('clientName', client.name);
-    }
-    setClientModalOpen(false);
-    if (openHistory) setHistoryOpen(true);
-  };
-
-  // ── New Quote ─────────────────────────────────────────
-  const handleNewQuote = () => {
-    if (calcStore.isDirty) { setConfirmNew(true); return; }
-    doNewQuote();
-  };
-
+  const handleNewQuote = () => clientStore.requestTransition(clientStore.newQuote);
   const handleSwitchClient = () => setClientModalOpen(true);
 
-  const doNewQuote = () => {
-    calcStore.resetCalculator();
-    if (clientStore.selectedClient) calcStore.setField('clientName', clientStore.selectedClient.name);
-    clientStore.setCurrentQuotation(null);
-    setConfirmNew(false);
-  };
-
-  // ── PDF Export ────────────────────────────────────────
-  const handleExportPDF = async () => {
-    const state = calcStore.getSerializable();
-    const qNum = clientStore.currentQuoteNumber || generateQuoteNumber();
-    await generatePDF({ ...state, _quoteNumber: qNum }, clientStore.selectedClient);
-    // Tag save with PDF Generated
-    if (clientStore.selectedClient) {
-      await doAutoSave();
-    }
-  };
-
-  // ── CSV Export ────────────────────────────────────────
-  const handleExportCSV = () => {
-    const state = calcStore.getSerializable();
-    exportCSV({ ...state, _quoteNumber: clientStore.currentQuoteNumber });
+  const handleExport = async format => {
+    if (useClientStore.getState().exportBusy) return;
+    useClientStore.setState({ exportBusy: true, actionError: null });
+    try {
+      assertExportable(calcStore.getSerializable());
+      if (!useCalculatorStore.getState().issuedAt) calcStore.setField('issuedAt', new Date().toISOString());
+      if (!useCalculatorStore.getState().issueSnapshot) {
+        const state = calcStore.getSerializable();
+        calcStore.setField('issueSnapshot', { state: { ...state, issueSnapshot: null }, calc: calcAll(state), capturedAt: new Date().toISOString() });
+      }
+      const captured = clientStore.captureSnapshot();
+      assertExportable(captured.state);
+      const client = { ...clientStore.selectedClient };
+      const saved = await clientStore.saveCurrentQuotation(captured);
+      if (format === 'pdf') await generatePDF(saved.state, client, undefined, saved.version);
+      else exportCSV(saved.state, saved.version);
+    } catch (error) { clientStore.reportError(error); }
+    finally { useClientStore.setState({ exportBusy: false }); }
   };
 
   // ── Section scroll spy ────────────────────────────────
@@ -218,7 +143,7 @@ function AppInner() {
       },
       { rootMargin: '-30% 0px -60% 0px' }
     );
-    ['section-1', 'section-2', 'section-3', 'section-4', 'section-5', 'section-6', 'section-7', 'section-8', 'section-9'].forEach(id => {
+    Array.from({ length: 10 }, (_, index) => `section-${index + 1}`).forEach(id => {
       const el = document.getElementById(id);
       if (el) observer.observe(el);
     });
@@ -227,19 +152,29 @@ function AppInner() {
 
   // ── Completion States ─────────────────────────────────
   const completions = {
-    'section-1': getCompletion([calcStore.clientName, calcStore.jobName, calcStore.orderQty, calcStore.flatLength, calcStore.flatWidth]),
-    'section-2': getCompletion([calcStore.masterLength, calcStore.masterWidth, calcStore.gsm]),
-    'section-3': getCompletion([calc.upsPerSheet, calc.netSheets, calc.grossSheets]),
-    'section-4': getCompletion([calcStore.paperRate, calc.paperCost]),
-    'section-5': getCompletion([calcStore.clickCharge]),
-    'section-6': getCompletion([calcStore.foilingRunRate || calcStore.uvRunRate || 0]),
-    'section-7': getCompletion([calcStore.punchingRate || calcStore.pastingRate || 0]),
-    'section-8': getCompletion([calcStore.margin, calcStore.gst, calc.finalTotal]),
-    'section-9': getCompletion([calcStore.isRepeatOrder ? 1 : 0]),
+    'section-1': getCompletion([calcStore.clientName, calcStore.jobName, calcStore.orderQty, calc.upsPerSheet]),
+    'section-2': getCompletion([calcStore.masterLength, calcStore.masterWidth, calcStore.gsm, calcStore.paperRate]),
+    'section-3': getCompletion([calc.netSheets, calc.grossSheets, calc.totalPaperCost]),
+    'section-4': getCompletion([calcStore.machineSize]),
+    'section-5': calcStore.laminationType ? getCompletion([calcStore.laminationType]) : 'complete',
+    'section-6': calcStore.foilingSize ? getCompletion([calcStore.foilingSize]) : 'complete',
+    'section-7': calcStore.uvType ? getCompletion([calcStore.uvType]) : 'complete',
+    'section-8': getCompletion([calcStore.machineSize]),
+    'section-9': calcStore.pastingType ? getCompletion([calcStore.pastingType]) : 'complete',
+    'section-10': validation.status === 'exportable' ? 'complete' : 'partial',
   };
 
   return (
     <div className="min-h-screen transition-colors duration-300">
+      {!isClientModalOpen && !isHistoryOpen && !clientStore.pendingTransition && !clientStore.transitionBusy &&
+        (clientStore.actionError || clientStore.saveError || clientStore.recoveryError || calcStore.validationError) && (
+        <div role="alert" className="fixed top-16 left-4 right-4 p-3 rounded-lg border border-red-400 bg-[var(--surface)] text-[var(--text-primary)] text-sm" style={{ zIndex: 250 }}>
+          {clientStore.recoveryError || clientStore.saveError || clientStore.actionError || calcStore.validationError}
+          {clientStore.saveError && <button className="ml-4 underline" onClick={() => clientStore.saveCurrentQuotation().catch(() => {})}>Retry Save</button>}
+          {clientStore.actionError && <button className="ml-4 underline" onClick={() => { clientStore.clearError(); clientStore.fetchClients(); }}>Reload Clients</button>}
+          <button aria-label="Dismiss error" className="ml-4 underline" onClick={() => { clientStore.clearError(); useCalculatorStore.setState({ validationError: null }); }}>Dismiss</button>
+        </div>
+      )}
 
       {/* Main App — renders whenever a client is selected */}
       {clientStore.selectedClient && (
@@ -269,38 +204,70 @@ function AppInner() {
               7: completions['section-7'],
               8: completions['section-8'],
               9: completions['section-9'],
+              10: completions['section-10'],
             }}
             sectionSubtotals={{
-              4: calc.paperCost,
-              8: calc.finalTotal,
+              3: calc.paperCost,
+              10: calc.finalTotal,
             }}
           />
 
           <main className="lg:ml-[240px] pt-14 pb-20 min-h-screen">
             <div className="max-w-3xl mx-auto px-4 py-8">
+              {validation.status !== 'exportable' && <div role="status" className="mb-4 text-sm text-[var(--text-secondary)]">
+                {validation.status === 'invalid' ? 'Invalid quotation' : 'Incomplete draft'}: {validation.messages.join(' ')}
+              </div>}
+              {calcStore.migrationReview?.required && <div className="mb-4 p-4 border border-[var(--border)] rounded-lg text-sm">
+                <p>{calcStore.migrationReview.message}</p>
+                <p>Percentage format: {calcStore.migrationReview.percentageFormat}. Select the current machine and finishes as needed.</p>
+                {calcStore.migrationReview.pendingWeightOverride != null && <div className="my-2">
+                  <p>A previously ignored Total Paper Weight override ({String(calcStore.migrationReview.pendingWeightOverride)} kg) was preserved but not activated.</p>
+                  <button className="mr-4 underline" onClick={() => {
+                    calcStore.setOverride('totalPaperWeight', calcStore.migrationReview.pendingWeightOverride);
+                    calcStore.setField('migrationReview', { ...calcStore.migrationReview, pendingWeightOverride: null });
+                  }}>Use weight override</button>
+                  <button className="underline" onClick={() => calcStore.setField('migrationReview', { ...calcStore.migrationReview, pendingWeightOverride: null })}>Keep calculated weight</button>
+                </div>}
+                <button disabled={calcStore.migrationReview.pendingWeightOverride != null} className="mt-2 underline" onClick={() => {
+                  clientStore.setCurrentQuotation(null);
+                  calcStore.setField('issuedAt', null);
+                  calcStore.setField('issueSnapshot', null);
+                  calcStore.setField('migrationReview', { ...calcStore.migrationReview, required: false, acknowledgedAt: new Date().toISOString() });
+                  calcStore.setField('revisedAt', new Date().toISOString());
+                }}>I reviewed the inputs; create a revised quotation</button>
+              </div>}
+              {['weightPerSheet', 'totalPaperWeight'].filter(key => calcStore.overrides[key] != null).map(key => (
+                <div key={key} className="mb-4 p-3 border border-[var(--border)] rounded-lg">
+                  <p className="text-xs">Paper pricing is controlled by a legacy weight override.</p>
+                  <CalculatedEditableField label={key === 'weightPerSheet' ? 'Weight per Sheet (kg)' : 'Total Paper Weight (kg)'}
+                    calculatedValue={calc[key]} overrideValue={calcStore.overrides[key]}
+                    onOverride={value => calcStore.setOverride(key, value)} onReset={() => calcStore.clearOverride(key)}
+                    formulaTooltip={key === 'weightPerSheet' ? 'Master Sheet Length × Master Sheet Width × GSM ÷ 1,550,000' : 'Gross Sheets × Weight per Sheet'} />
+                </div>
+              ))}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.3 }}
               >
-                <Section1 completion={completions['section-1']} />
-                <Section2 completion={completions['section-2']} />
-                <Section3 completion={completions['section-3']} calc={calc} />
-                <Section4 completion={completions['section-4']} calc={calc} />
-                <Section5 completion={completions['section-5']} calc={calc} />
-                <Section6 completion={completions['section-6']} calc={calc} />
-                <Section7 completion={completions['section-7']} calc={calc} />
-                <Section8 completion={completions['section-8']} calc={calc} />
-                <Section9 completion={completions['section-9']} calc={calc} />
+                <JobSpecs completion={completions['section-1']} />
+                <PaperSpecs completion={completions['section-2']} />
+                <PaperCost completion={completions['section-3']} calc={calc} />
+                <Printing completion={completions['section-4']} calc={calc} />
+                <Lamination completion={completions['section-5']} calc={calc} />
+                <Foiling completion={completions['section-6']} calc={calc} />
+                <UV completion={completions['section-7']} calc={calc} />
+                <DieCutting completion={completions['section-8']} calc={calc} />
+                <Pasting completion={completions['section-9']} calc={calc} />
+                <Summary completion={completions['section-10']} calc={calc} />
               </motion.div>
             </div>
           </main>
 
           <SummaryBar
             calc={calc}
-            onExportPDF={handleExportPDF}
-            onExportCSV={handleExportCSV}
-            onSaveSnapshot={handleSaveSnapshot}
+            onExportPDF={() => handleExport('pdf')}
+            onExportCSV={() => handleExport('csv')}
           />
 
           <QuotationHistoryDrawer
@@ -316,18 +283,19 @@ function AppInner() {
       </AnimatePresence>
 
       {/* Confirm New Quote Modal */}
-      {confirmNew && (
+      {clientStore.pendingTransition && (
         <ConfirmModal
-          message="You have unsaved changes. Start a new quote anyway? Current work will be lost."
-          onConfirm={doNewQuote}
-          onCancel={() => setConfirmNew(false)}
+          busy={clientStore.transitionBusy}
+          onSave={() => clientStore.resolveTransition('save')}
+          onDiscard={() => clientStore.resolveTransition('discard')}
+          onCancel={() => clientStore.resolveTransition('cancel')}
         />
       )}
-
-      {/* Toast */}
-      <AnimatePresence>
-        {toast && <Toast key="toast" message={toast.message} type={toast.type} />}
-      </AnimatePresence>
+      {clientStore.transitionBusy && !clientStore.pendingTransition && (
+        <Dialog label="Opening quotation" className="flex items-center justify-center bg-black/30">
+          <div role="status" className="p-4 rounded-lg bg-[var(--surface)] text-[var(--text-primary)]">Opening quotation...</div>
+        </Dialog>
+      )}
 
       {/* Custom cursor rendered last so it paints above all modals/overlays */}
       <CustomCursor />
@@ -337,8 +305,8 @@ function AppInner() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <MotionConfig reducedMotion="user">
       <AppInner />
-    </QueryClientProvider>
+    </MotionConfig>
   );
 }

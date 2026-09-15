@@ -1,10 +1,10 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Copy, Trash2, Download, Package2 } from 'lucide-react';
 import useClientStore from '../../store/clientStore';
-import useCalculatorStore from '../../store/calculatorStore';
-import { calcAll, formatINR } from '../../lib/calc';
+import { quotationPreview } from '../../lib/calc';
 import { generatePDF } from '../../lib/pdf';
+import Dialog from '../ui/Dialog';
 
 /* ─── Helpers ─────────────────────────────────────────────────────── */
 const fmtDate = (str) => {
@@ -44,7 +44,10 @@ const InlineToast = ({ message }) => (
     style={{
       position: 'fixed',
       bottom: '80px',
-      right: '440px',
+      right: '16px',
+      left: '16px',
+      maxWidth: '400px',
+      marginLeft: 'auto',
       background: '#1A1A1A',
       color: 'white',
       fontSize: '12px',
@@ -63,11 +66,11 @@ const InlineToast = ({ message }) => (
 const QuotationCard = ({ quotation: q, onLoad, onDuplicate, onExport, onDelete }) => {
   const [hovered, setHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const calc = calcAll(q.state || {});
-  const grandTotal = q.state?.grandTotal || calc.finalTotal || 0;
+  const preview = quotationPreview(q);
 
   return (
     <motion.div
+      className="history-quotation-card"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       onMouseEnter={() => setHovered(true)}
@@ -99,36 +102,21 @@ const QuotationCard = ({ quotation: q, onLoad, onDuplicate, onExport, onDelete }
             <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '11px', color: 'var(--color-text-secondary)' }}>
               {q.quote_number || '—'}{q.version > 1 ? ` · v${q.version}` : ''}
             </span>
-            {q.is_repeat_order && (
-              <span style={{
-                fontSize: '9px',
-                textTransform: 'uppercase',
-                background: '#C8956C',
-                color: 'white',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                letterSpacing: '0.05em',
-                fontFamily: "'DM Sans', sans-serif",
-                fontWeight: 600,
-              }}>
-                Repeat
-              </span>
-            )}
           </div>
         </div>
 
         {/* Trash */}
         {!confirmDelete ? (
           <button
+            aria-label={`Delete ${q.job_name || 'quotation'}`} className="history-delete"
             onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
             style={{
-              opacity: hovered ? 1 : 0,
               transition: 'opacity 150ms ease',
               background: 'none',
               border: 'none',
               cursor: 'pointer',
               color: '#EF4444',
-              padding: '2px',
+              padding: '10px',
               display: 'flex',
               alignItems: 'center',
               flexShrink: 0,
@@ -165,17 +153,15 @@ const QuotationCard = ({ quotation: q, onLoad, onDuplicate, onExport, onDelete }
           </span>
         </div>
         <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', fontWeight: 600, color: '#C8956C' }}>
-          {grandTotal > 0 ? formatINR(grandTotal) : '₹—'}
+          {preview.label}
         </span>
       </div>
 
       {/* Action row */}
-      <div style={{
+      <div className="quotation-actions" style={{
         display: 'flex',
         gap: '6px',
-        opacity: hovered ? 1 : 0,
         transition: 'opacity 150ms ease',
-        pointerEvents: hovered ? 'auto' : 'none',
       }}>
         <button
           onClick={(e) => { e.stopPropagation(); onLoad(q); }}
@@ -278,50 +264,52 @@ const QuotationHistoryDrawer = ({ isOpen, onClose }) => {
     duplicateQuotation,
     deleteQuotation,
   } = useClientStore();
-  const { isDirty } = useCalculatorStore();
 
   const [sort, setSort] = useState('newest');
-  const [pendingLoad, setPendingLoad] = useState(null);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
     if (isOpen && selectedClient) fetchQuotationsByClient(selectedClient.id);
-  }, [isOpen, selectedClient]);
+  }, [isOpen, selectedClient, fetchQuotationsByClient]);
 
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
   };
 
-  const sorted = [...quotations].sort((a, b) => {
+  const sorted = quotations.filter(quote => quote.client_id === selectedClient?.id).sort((a, b) => {
     if (sort === 'newest') return new Date(b.updated_at) - new Date(a.updated_at);
-    const aTotal = a.state?.grandTotal || calcAll(a.state || {}).finalTotal || 0;
-    const bTotal = b.state?.grandTotal || calcAll(b.state || {}).finalTotal || 0;
+    const aTotal = quotationPreview(a).total || 0;
+    const bTotal = quotationPreview(b).total || 0;
     return bTotal - aTotal;
   });
 
   const handleLoad = (q) => {
-    if (isDirty) { setPendingLoad(q); return; }
-    doLoad(q);
+    useClientStore.getState().requestTransition(() => doLoad(q));
   };
 
   const doLoad = (q) => {
     loadQuotation(q);
-    setPendingLoad(null);
     onClose();
   };
 
   const handleDuplicate = async (id) => {
-    await duplicateQuotation(id);
-    if (selectedClient) fetchQuotationsByClient(selectedClient.id);
-    showToast('Duplicate created');
+    try { await duplicateQuotation(id); showToast('Duplicate created'); }
+    catch (error) { useClientStore.getState().reportError(error); }
   };
 
   const handleDelete = async (id) => {
-    await deleteQuotation(id);
+    try { await deleteQuotation(id); }
+    catch (error) { useClientStore.getState().reportError(error); }
   };
 
-  const handleExport = (q) => generatePDF(q.state || {}, selectedClient);
+  const handleExport = async q => {
+    try {
+      const client = useClientStore.getState().clients.find(item => item.id === q.client_id);
+      if (!client) throw new Error('The quotation client is unavailable. Reload clients before exporting.');
+      await generatePDF({ ...q.state, _quoteNumber: q.quote_number }, client, undefined, q.version);
+    } catch (error) { useClientStore.getState().reportError(error); }
+  };
 
   return (
     <>
@@ -331,7 +319,7 @@ const QuotationHistoryDrawer = ({ isOpen, onClose }) => {
 
       <AnimatePresence>
         {isOpen && (
-          <>
+          <Dialog label="Quotation history" onClose={onClose}>
             {/* Backdrop */}
             <motion.div
               key="backdrop"
@@ -414,6 +402,7 @@ const QuotationHistoryDrawer = ({ isOpen, onClose }) => {
                   </div>
                   <button
                     onClick={onClose}
+                    aria-label="Close quotation history"
                     style={{
                       background: 'none',
                       border: 'none',
@@ -494,93 +483,9 @@ const QuotationHistoryDrawer = ({ isOpen, onClose }) => {
                 )}
               </div>
 
-              {/* ── Unsaved changes confirm ── */}
-              <AnimatePresence>
-                {pendingLoad && (
-                  <motion.div
-                    key="pending"
-                    initial={{ y: '100%' }}
-                    animate={{ y: 0 }}
-                    exit={{ y: '100%' }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 35 }}
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: 'var(--color-surface)',
-                      borderTop: '1px solid var(--color-border)',
-                      padding: '20px 24px',
-                      boxShadow: '0 -8px 32px rgba(0,0,0,0.1)',
-                    }}
-                  >
-                    <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: '4px' }}>
-                      You have unsaved changes.
-                    </p>
-                    <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
-                      Load anyway? Your current work will be lost.
-                    </p>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button
-                        onClick={() => doLoad(pendingLoad)}
-                        className="shimmer-btn"
-                        style={{
-                          flex: 1,
-                          padding: '10px 0',
-                          background: 'linear-gradient(135deg, #C8956C 0%, #b8825c 100%)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '10px',
-                          fontSize: '13px',
-                          fontWeight: 500,
-                          fontFamily: "'DM Sans', sans-serif",
-                          cursor: 'pointer',
-                          transition: 'transform 200ms ease, box-shadow 200ms ease',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = 'translateY(-2px)';
-                          e.currentTarget.style.boxShadow = '0 4px 16px rgba(200,149,108,0.4)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'translateY(0)';
-                          e.currentTarget.style.boxShadow = 'none';
-                        }}
-                      >
-                        Load Anyway
-                      </button>
-                      <button
-                        onClick={() => setPendingLoad(null)}
-                        style={{
-                          flex: 1,
-                          padding: '10px 0',
-                          background: 'none',
-                          border: '1px solid var(--color-border)',
-                          borderRadius: '10px',
-                          fontSize: '13px',
-                          fontFamily: "'DM Sans', sans-serif",
-                          color: 'var(--color-text-secondary)',
-                          cursor: 'pointer',
-                          transition: 'all 200ms ease',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = 'translateY(-1px)';
-                          e.currentTarget.style.borderColor = 'var(--color-text-secondary)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'translateY(0)';
-                          e.currentTarget.style.borderColor = 'var(--color-border)';
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
               <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </motion.div>
-          </>
+          </Dialog>
         )}
       </AnimatePresence>
     </>

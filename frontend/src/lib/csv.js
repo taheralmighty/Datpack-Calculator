@@ -1,84 +1,95 @@
-import { calcAll } from './calc';
+import Papa from 'papaparse';
+import { calcAll, migrateState, documentPricing, MACHINE_SIZES, LAMINATION_OPTIONS, FOILING_SIZES, UV_OPTIONS, PASTING_OPTIONS } from './calc';
+import { assertExportable } from './validation';
 
-export const exportCSV = (state) => {
-  const calc = calcAll(state);
-  const rows = [
+export const buildCSVRows = (saved, version = 1) => {
+  const migrated = migrateState(saved);
+  const state = migrated.issueSnapshot ? { ...migrated.issueSnapshot.state, _quoteNumber: migrated._quoteNumber } : migrated;
+  const calc = migrated.issueSnapshot?.calc || calcAll(state);
+  const pricing = documentPricing(state, calc);
+  return [
     ['DatPack Co. Quotation Export', new Date().toLocaleString('en-IN')],
+    ['Quotation Number', state._quoteNumber || 'Draft'],
+    ['Version', version],
     [],
     ['SECTION 1 — JOB SPECIFICATIONS'],
     ['Client Name', state.clientName || ''],
     ['Job Name', state.jobName || ''],
     ['Order Quantity', state.orderQty || 0],
-    ['Flat Size Length (mm)', state.flatLength || 0],
-    ['Flat Size Width (mm)', state.flatWidth || 0],
+    ['Ups per Sheet', calc.upsPerSheet],
     [],
     ['SECTION 2 — PAPER SPECIFICATIONS'],
-    ['Master Sheet Length (mm)', state.masterLength || 0],
-    ['Master Sheet Width (mm)', state.masterWidth || 0],
+    ['Master Sheet Length (in)', state.masterLength || 0],
+    ['Master Sheet Width (in)', state.masterWidth || 0],
     ['Paper GSM', state.gsm || 0],
-    [],
-    ['SECTION 3 — LAYOUT & QUANTITY'],
-    ['Ups per Sheet', calc.upsPerSheet],
-    ['Net Sheets Required', calc.netSheets],
-    ['Platen Wastage %', state.wastage || 5],
-    ['Gross Sheets Needed', calc.grossSheets],
-    [],
-    ['SECTION 4 — PAPER COST'],
-    ['Weight per Sheet (kg)', calc.weightPerSheet.toFixed(6)],
-    ['Total Paper Weight (kg)', calc.totalWeight.toFixed(3)],
     ['Paper Rate per kg (₹)', state.paperRate || 0],
+    ['Platen Wastage %', Number(state.platenWastage || 0) * 100],
+    [],
+    ['SECTION 3 — PAPER COST'],
+    ['Net Sheets Required', calc.netSheets],
+    ['Gross Sheets Needed', calc.grossSheets],
     ['Total Paper Cost (₹)', calc.paperCost.toFixed(2)],
     [],
-    ['SECTION 5 — PRINTING & LAMINATION'],
-    ['Total Impressions', calc.grossSheets],
-    ['Click Charge per Sheet (₹)', state.clickCharge || 0],
+    ['SECTION 4 — PRINTING'],
+    ['Machine Size', MACHINE_SIZES[state.machineSize]?.label || 'None'],
+    ['Plate Cost (₹)', calc.plateCost],
+    ['Print Price / 1000 (₹)', calc.printPrice],
+    ['Number of Thousands', calc.numberOfThousands],
     ['Total Print Cost (₹)', calc.printCost.toFixed(2)],
-    ['Lam Rate per Sq. Inch (₹)', state.lamRate || 0],
-    ['Sq. Inches per Sheet', calc.sqInPerSheet.toFixed(4)],
+    [],
+    ['SECTION 5 — LAMINATION'],
+    ['Lamination Type', LAMINATION_OPTIONS[state.laminationType]?.label || 'None'],
     ['Total Lamination Cost (₹)', calc.lamCost.toFixed(2)],
     [],
-    ['SECTION 6 — PREMIUM FINISHES'],
-    ['Foil Length (mm)', state.foilLength || 0],
-    ['Foil Width (mm)', state.foilWidth || 0],
-    ['Foil Block Rate per Sq. Inch (₹)', state.foilBlockRate || 0],
-    ['Foiling Setup Cost (₹)', state.foilingSetup || 0],
-    ['Foiling Run Rate per 1000 (₹)', state.foilingRunRate || 0],
-    ['Foil Block Cost (₹)', calc.foilBlockCost.toFixed(2)],
+    ['SECTION 6 — FOILING'],
+    ['Foiling Size', FOILING_SIZES[state.foilingSize]?.label || 'None'],
+    ['Foiling Block Cost (₹)', calc.foilingBlockCost],
+    ['Foiling Run Rate (₹)', calc.foilingRunRate],
     ['Total Foiling Cost (₹)', calc.foilingCost.toFixed(2)],
-    ['UV Screen Cost (₹)', state.uvScreenCost || 0],
-    ['UV Run Rate per 1000 (₹)', state.uvRunRate || 0],
-    ['Total Spot UV Cost (₹)', calc.uvCost.toFixed(2)],
     [],
-    ['SECTION 7 — FINISHING'],
-    ['Punching Rate per 1000 (₹)', state.punchingRate || 0],
-    ['Punching Setup Cost (₹)', state.punchingSetup || 0],
-    ['Wooden Die Cost (₹)', state.dieCost || 0],
-    ['Pasting Rate per Box (₹)', state.pastingRate || 0],
-    ['Total Die-Cutting Cost (₹)', calc.dieCuttingCost.toFixed(2)],
+    ['SECTION 7 — UV'],
+    ['UV Type', UV_OPTIONS[state.uvType]?.label || 'None'],
+    ['UV Rate (₹)', calc.uvRate],
+    ['Total UV Cost (₹)', calc.totalUVCost.toFixed(2)],
+    [],
+    ['SECTION 8 — DIE CUTTING'],
+    ['Punch Cost (₹)', calc.punchCost],
+    ['Punching Cost per 1000 (₹)', calc.punchingCostPer1000],
+    ['Total Punching Cost (₹)', calc.totalPunchingCost.toFixed(2)],
+    [],
+    ['SECTION 9 — PASTING'],
+    ['Type of Pasting', PASTING_OPTIONS[state.pastingType]?.label || 'None'],
     ['Total Pasting Cost (₹)', calc.pastingCost.toFixed(2)],
     [],
-    ['SECTION 8 — FINAL SUMMARY'],
+    ['SECTION 10 — FINAL SUMMARY & PRICING'],
     ['Total Production Cost (₹)', calc.totalProductionCost.toFixed(2)],
     ['Cost Per Unit (₹)', calc.costPerUnit.toFixed(4)],
-    ['Desired Profit Margin %', state.margin || 30],
-    ['Selling Price Per Unit (₹)', calc.sellingPricePerUnit.toFixed(4)],
+    ['Desired Profit Margin %', Number(state.margin || 0) * 100],
+    ['Selling Price Per Unit (₹)', pricing.unitPrice.toFixed(2)],
+    ['Displayed Rate × Quantity (₹)', pricing.extension.toFixed(2)],
+    ['Rate Rounding Adjustment (₹)', pricing.rateAdjustment.toFixed(2)],
     ['Subtotal Quote Value (₹)', calc.subtotal.toFixed(2)],
-    ['GST %', state.gst || 18],
+    ['GST %', Number(state.gst || 0) * 100],
+    ['GST (₹)', calc.gstAmount.toFixed(2)],
     ['Final Total w/ GST (₹)', calc.finalTotal.toFixed(2)],
+    ['Tax Rounding Adjustment (₹)', pricing.taxAdjustment.toFixed(2)],
+    ['Issued Date', state.issuedAt || 'Not issued'],
+    ['Revision Date', state.revisedAt || ''],
     [],
-    ['SECTION 9 — REPEAT ORDER'],
-    ['Is Repeat Order', state.isRepeatOrder ? 'Yes' : 'No'],
-    ['One-Time Tooling Cost (₹)', calc.oneTimeTooling.toFixed(2)],
-    ['Repeat Subtotal (₹)', calc.repeatSubtotal.toFixed(2)],
-    ['Repeat Final Total w/ GST (₹)', calc.repeatFinalTotal.toFixed(2)],
+    ['COST BREAKDOWN'],
+    ...calc.breakdown.map(item => [item.name, item.value.toFixed(2)]),
+    ...(pricing.costAdjustment ? [['Cost Rounding Adjustment (₹)', pricing.costAdjustment.toFixed(2)]] : []),
   ];
+};
 
-  const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+export const exportCSV = (state, version = 1) => {
+  assertExportable(migrateState(state));
+  const csv = Papa.unparse(buildCSVRows(state, version), { quotes: true, escapeFormulae: true });
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `DatPack_Quote_${state._quoteNumber || 'Draft'}_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `DatPack_Quote_${state._quoteNumber || 'Draft'}_v${version}_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 };

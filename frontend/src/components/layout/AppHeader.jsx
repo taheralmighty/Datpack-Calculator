@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { Clock, Plus, RotateCcw, User, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Clock, Plus, User, ChevronDown } from 'lucide-react';
 import useClientStore from '../../store/clientStore';
 import useCalculatorStore from '../../store/calculatorStore';
-import { saveQuotation } from '../../lib/db';
-import { generateQuoteNumber } from '../../lib/calc';
 import DarkModeToggle from '../ui/DarkModeToggle';
 import logoCopper from '../../assets/logo-copper.png';
 
 const SaveDot = ({ isSaving, lastSavedAt }) => {
+  const isDirty = useCalculatorStore(state => state.isDirty);
+  const saveError = useClientStore(state => state.saveError);
+  const saveRetryable = useClientStore(state => state.saveRetryable);
   const [dotClass, setDotClass] = useState('');
 
   useEffect(() => {
@@ -19,25 +19,14 @@ const SaveDot = ({ isSaving, lastSavedAt }) => {
     }
   }, [isSaving]);
 
-  const label = isSaving ? 'Saving...' : lastSavedAt
-    ? `Saved ${timeAgo(lastSavedAt)}`
-    : 'Not saved';
+  const label = saveError ? (saveRetryable ? 'Waiting to retry' : 'Save failed') : isSaving ? (isDirty ? 'Saving changes...' : 'Saving...') : isDirty ? 'Unsaved changes' : lastSavedAt ? 'Saved' : 'Draft';
 
   return (
-    <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]" data-testid="save-indicator">
+    <div role="status" className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]" data-testid="save-indicator">
       <span className={`w-2 h-2 rounded-full bg-[var(--copper)] ${dotClass}`} />
-      {label}
+      <span className="hidden sm:inline">{label}</span><span className="sm:hidden" aria-label={label} title={label}>{saveError ? '!' : isDirty ? '*' : ''}</span>
     </div>
   );
-};
-
-const timeAgo = (dateStr) => {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const secs = Math.floor(diff / 1000);
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  return `${Math.floor(mins / 60)}h ago`;
 };
 
 const AppHeader = ({ onHistory, onSwitchClient, onNewQuote }) => {
@@ -53,12 +42,12 @@ const AppHeader = ({ onHistory, onSwitchClient, onNewQuote }) => {
 
   return (
     <header
-      className="sticky top-0 left-0 right-0 z-30 h-14 flex items-center px-6 gap-4"
+      className="sticky top-0 left-0 right-0 z-30 h-14 flex items-center px-3 sm:px-6 gap-2 sm:gap-4"
       style={headerStyle}
       data-testid="app-header"
     >
       {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center' }} className="mr-4">
+      <div style={{ display: 'flex', alignItems: 'center' }} className="sm:mr-4 shrink-0">
         <img
           src={logoCopper}
           alt=""
@@ -89,7 +78,7 @@ const AppHeader = ({ onHistory, onSwitchClient, onNewQuote }) => {
         {selectedClient && (
           <button
             onClick={onSwitchClient}
-            className="shimmer-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-primary)] hover:border-[var(--copper)] transition-all"
+            className="shimmer-btn min-w-0 flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-primary)] hover:border-[var(--copper)] transition-all"
             data-clickable data-testid="client-switcher"
           >
             <User size={12} strokeWidth={1.5} className="text-[var(--copper)]" />
@@ -104,9 +93,10 @@ const AppHeader = ({ onHistory, onSwitchClient, onNewQuote }) => {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
         <button
           onClick={onHistory}
+          aria-label="History" title="History"
           className="shimmer-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs hover:border-[var(--copper)] hover:-translate-y-0.5 transition-all"
           data-clickable data-testid="history-btn"
         >
@@ -124,6 +114,7 @@ const AppHeader = ({ onHistory, onSwitchClient, onNewQuote }) => {
 
         <button
           onClick={onNewQuote}
+          aria-label="New Quote" title="New Quote"
           className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[var(--copper)] text-white text-xs font-medium shimmer-btn hover:-translate-y-0.5 transition-all"
           data-clickable data-testid="new-quote-btn"
         >

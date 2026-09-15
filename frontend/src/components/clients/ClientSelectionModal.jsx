@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, X, Package2, SearchX, Mail } from 'lucide-react';
 import useClientStore from '../../store/clientStore';
 import useCalculatorStore from '../../store/calculatorStore';
-import { formatINR } from '../../lib/calc';
-import { hasSupabase } from '../../lib/supabase';
+import { quotationPreview } from '../../lib/calc';
 import DarkModeToggle from '../ui/DarkModeToggle';
+import Dialog from '../ui/Dialog';
 import logoCopper from '../../assets/logo-copper.png';
 
 /* ─── Constants ─────────────────────────────────────────────────── */
@@ -24,6 +24,7 @@ const getInitials = (name = '') => {
 };
 
 const getQuoteCount = (client) => {
+  if (client.quotationCount != null) return client.quotationCount;
   if (!client.quotations) return 0;
   if (Array.isArray(client.quotations)) {
     if (client.quotations[0]?.count !== undefined) return client.quotations[0].count;
@@ -32,7 +33,7 @@ const getQuoteCount = (client) => {
   return 0;
 };
 
-const getGrandTotal = (q) => q.grandTotal || q.state?.grandTotal || 0;
+const getGrandTotal = (q) => quotationPreview(q).label;
 
 /* ─── Shared styles ─────────────────────────────────────────────── */
 const pillButtonStyle = {
@@ -76,13 +77,16 @@ const darkInputStyle = {
 
 /* ─── loadAsTemplate (module-level helper) ───────────────────────── */
 function loadAsTemplate(quotation, clients) {
-  const templateState = {
-    ...quotation.state,
-    jobName: (quotation.state?.jobName || quotation.job_name || '') + ' (Copy)',
-  };
-  useCalculatorStore.setState(templateState);
   const client = clients.find((c) => c.id === quotation.client_id);
   if (client) useClientStore.getState().selectClient(client);
+  const templateState = {
+    ...quotation.state,
+    issueSnapshot: null, issuedAt: null, revisedAt: null,
+    jobName: (quotation.state?.jobName || quotation.job_name || '') + ' (Copy)',
+  };
+  useCalculatorStore.getState().loadState({ ...templateState, _quoteNumber: null });
+  useClientStore.getState().setCurrentQuotation(null);
+  useCalculatorStore.getState().setField('jobName', templateState.jobName);
   useClientStore.getState().setClientModalOpen(false);
 }
 
@@ -135,22 +139,6 @@ const SkeletonCard = () => (
   }} />
 );
 
-const RepeatBadge = () => (
-  <span style={{
-    fontSize: '9px',
-    textTransform: 'uppercase',
-    background: 'rgba(200,149,108,0.2)',
-    color: '#C8956C',
-    padding: '2px 6px',
-    borderRadius: '20px',
-    letterSpacing: '0.05em',
-    flexShrink: 0,
-    fontFamily: "'DM Sans', sans-serif",
-  }}>
-    REPEAT
-  </span>
-);
-
 /* Recent Quotation Tile (2×2 grid) */
 const RecentQuotationTile = ({ quotation: q, index, onLoad, onTemplate, onClick }) => {
   const [hovered, setHovered] = useState(false);
@@ -191,7 +179,6 @@ const RecentQuotationTile = ({ quotation: q, index, onLoad, onTemplate, onClick 
         }}>
           {q.job_name || 'Untitled'}
         </span>
-        {q.is_repeat_order && <RepeatBadge />}
       </div>
 
       <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12.5px', color: 'rgba(200,149,108,0.9)', marginTop: '4px' }}>
@@ -203,7 +190,7 @@ const RecentQuotationTile = ({ quotation: q, index, onLoad, onTemplate, onClick 
           {q.quote_number || '—'}
         </span>
         <span style={{ fontFamily: "'DM Sans'", fontSize: '12px', fontWeight: 600, color: 'rgba(200,149,108,1)' }}>
-          {gt > 0 ? formatINR(gt) : '₹—'}
+          {gt}
         </span>
       </div>
 
@@ -344,7 +331,6 @@ const SearchQuotationRow = ({ quotation: q, index, onLoad, onTemplate, onClick }
           <span style={{ fontFamily: "'DM Sans'", fontSize: '12px', fontWeight: 500, color: 'var(--modal-text-base)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {q.job_name || 'Untitled'}
           </span>
-          {q.is_repeat_order && <RepeatBadge />}
         </div>
         <div style={{ display: 'flex', gap: '4px', marginTop: '3px', alignItems: 'center' }}>
           <span style={{ fontFamily: "'DM Sans'", fontSize: '11px', color: 'rgba(200,149,108,0.88)' }}>{q.clientName || '—'}</span>
@@ -355,7 +341,7 @@ const SearchQuotationRow = ({ quotation: q, index, onLoad, onTemplate, onClick }
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0, maxWidth: '110px' }}>
         <span style={{ fontFamily: "'DM Sans'", fontSize: '10px', color: 'rgba(200,149,108,0.9)' }}>
-          {gt > 0 ? formatINR(gt) : '₹—'}
+          {gt}
         </span>
         <span style={{ fontFamily: "'DM Sans'", fontSize: '10px', color: 'var(--modal-text-dimmed)' }}>
           {formatDate(q.updated_at)}
@@ -382,6 +368,8 @@ export default function ClientSelectionModal() {
     clients,
     allQuotations,
     isLoadingClients,
+    clientsLoadError,
+    quotationsLoadError,
     fetchClients,
     selectClient,
     createNewClient,
@@ -398,7 +386,7 @@ export default function ClientSelectionModal() {
 
   useEffect(() => {
     fetchClients();
-  }, []);
+  }, [fetchClients]);
 
   useEffect(() => {
     setQuotationPage(0);
@@ -431,43 +419,38 @@ export default function ClientSelectionModal() {
     (quotationPage + 1) * QUOTES_PER_PAGE
   );
 
-  const handleLoadQuotation = (q) => {
+  const handleLoadQuotation = (q) => useClientStore.getState().requestTransition(() => {
     const client = clients.find((c) => c.id === q.client_id);
     if (client) selectClient(client);
     loadQuotation(q);
     setClientModalOpen(false);
-  };
+  });
 
   const handleClientLatest = (client, e) => {
     e.stopPropagation();
-    selectClient(client);
-    const latest = allQuotations
-      .filter(q => q.client_id === client.id)
-      .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
-    if (latest) loadQuotation(latest);
-    setClientModalOpen(false);
+    useClientStore.getState().requestTransition(() => useClientStore.getState().loadLatest(client));
   };
 
   const handleClientAll = (client, e) => {
     e.stopPropagation();
-    selectClient(client);
-    setClientModalOpen(false);
-    setTimeout(() => setHistoryOpen(true), 150);
+    useClientStore.getState().requestTransition(() => {
+      selectClient(client);
+      setClientModalOpen(false);
+      setHistoryOpen(true);
+    });
   };
 
   const handleCreateClient = async (e) => {
     e.preventDefault();
     if (!newClientData.name.trim()) return;
-    setIsCreating(true);
-    try {
-      await createNewClient(newClientData);
-      setShowNewClientForm(false);
-      setNewClientData({ name: '', phone: '', email: '' });
-    } catch (err) {
-      console.error('[ClientSelectionModal] createNewClient error:', err);
-    } finally {
-      setIsCreating(false);
-    }
+    useClientStore.getState().requestTransition(async () => {
+      setIsCreating(true);
+      try {
+        await createNewClient({ ...newClientData, name: newClientData.name.trim() });
+        setShowNewClientForm(false);
+        setNewClientData({ name: '', phone: '', email: '' });
+      } finally { setIsCreating(false); }
+    });
   };
 
   const focusInput = (e) => {
@@ -480,6 +463,7 @@ export default function ClientSelectionModal() {
   };
 
   return (
+    <Dialog label="Clients and quotations" onClose={useClientStore.getState().selectedClient ? () => setClientModalOpen(false) : undefined}>
     <motion.div
       className="fixed inset-0 z-[100] flex items-center justify-center"
       style={{
@@ -538,6 +522,7 @@ export default function ClientSelectionModal() {
               Dat Pack Co.
             </span>
             <DarkModeToggle />
+            {useClientStore.getState().selectedClient && <button aria-label="Close client selection" onClick={() => setClientModalOpen(false)}><X size={18} /></button>}
           </div>
           <p style={{
             fontFamily: "'DM Sans', sans-serif",
@@ -556,20 +541,6 @@ export default function ClientSelectionModal() {
             background: 'linear-gradient(90deg, transparent, rgba(200,149,108,0.35), transparent)',
             marginTop: '18px',
           }} />
-          {!hasSupabase && (
-            <div style={{
-              marginTop: '12px',
-              background: 'rgba(251,191,36,0.08)',
-              border: '1px solid rgba(251,191,36,0.25)',
-              borderRadius: '8px',
-              padding: '6px 12px',
-              fontSize: '11px',
-              color: 'rgba(251,191,36,0.75)',
-              fontFamily: "'DM Sans', sans-serif",
-            }}>
-              Running in offline mode — data saved locally
-            </div>
-          )}
         </div>
 
         {/* ── Unified Search ── */}
@@ -591,6 +562,7 @@ export default function ClientSelectionModal() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search clients or quotations..."
+              aria-label="Search clients or recent 200 quotations"
               style={{
                 ...darkInputStyle,
                 fontSize: '14px',
@@ -635,6 +607,13 @@ export default function ClientSelectionModal() {
           scrollbarWidth: 'thin',
           scrollbarColor: 'rgba(200,149,108,0.25) transparent',
         }}>
+          {useClientStore.getState().recoveryDrafts.map(draft => (
+            <div key={draft.id} className="mb-3 p-3 border border-[var(--border)] rounded-lg text-sm">
+              <p>Recovered draft: {draft.state.jobName || 'Untitled'} ({draft.client?.name || draft.client_id})</p>
+              <button className="mr-4 underline" onClick={() => useClientStore.getState().requestTransition(() => useClientStore.getState().recoverDraft(draft))}>Recover</button>
+              <button className="underline" onClick={() => useClientStore.getState().discardRecovery(draft.id)}>Discard draft</button>
+            </div>
+          ))}
           {searchQuery === '' ? (
             <>
               <SectionLabel>Recent Quotations</SectionLabel>
@@ -643,8 +622,8 @@ export default function ClientSelectionModal() {
                   ? [0, 1, 2, 3].map((i) => <SkeletonTile key={i} />)
                   : recentQuotations.length === 0
                     ? (
-                      <div style={{ gridColumn: 'span 2', color: 'var(--modal-text-dimmed)', fontSize: '12px', textAlign: 'center', padding: '20px', fontFamily: "'DM Sans'" }}>
-                        No recent quotations
+                      <div style={{ gridColumn: '1 / -1', color: 'var(--modal-text-dimmed)', fontSize: '12px', textAlign: 'center', padding: '20px', fontFamily: "'DM Sans'" }}>
+                        {clientsLoadError || quotationsLoadError ? 'Recent quotations could not be loaded. Use Reload Clients to retry.' : 'No recent quotations'}
                       </div>
                     )
                     : recentQuotations.map((q, i) => (
@@ -653,7 +632,7 @@ export default function ClientSelectionModal() {
                         quotation={q}
                         index={i}
                         onLoad={(e) => { e.stopPropagation(); handleLoadQuotation(q); }}
-                        onTemplate={(e) => { e.stopPropagation(); loadAsTemplate(q, clients); }}
+                        onTemplate={(e) => { e.stopPropagation(); useClientStore.getState().requestTransition(() => loadAsTemplate(q, clients)); }}
                         onClick={() => handleLoadQuotation(q)}
                       />
                     ))
@@ -669,7 +648,7 @@ export default function ClientSelectionModal() {
                   ? (
                     <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--modal-text-dimmed)', fontSize: '13px', fontFamily: "'DM Sans'" }}>
                       <Package2 size={24} style={{ margin: '0 auto 10px', opacity: 0.3, color: '#C8956C', display: 'block' }} />
-                      No clients yet. Add your first client below.
+                      {clientsLoadError ? 'Clients could not be loaded. Use Reload Clients to retry.' : 'No clients yet. Add your first client below.'}
                     </div>
                   )
                   : clients.map((client, i) => (
@@ -677,7 +656,7 @@ export default function ClientSelectionModal() {
                       key={client.id}
                       client={client}
                       index={i}
-                      onSelect={() => { selectClient(client); setClientModalOpen(false); }}
+                      onSelect={() => useClientStore.getState().requestTransition(() => { selectClient(client); setClientModalOpen(false); })}
                       onLatest={(e) => handleClientLatest(client, e)}
                       onAll={(e) => handleClientAll(client, e)}
                     />
@@ -705,7 +684,7 @@ export default function ClientSelectionModal() {
                           client={client}
                           index={i}
                           compact
-                          onSelect={() => { selectClient(client); setClientModalOpen(false); }}
+                          onSelect={() => useClientStore.getState().requestTransition(() => { selectClient(client); setClientModalOpen(false); })}
                           onLatest={(e) => handleClientLatest(client, e)}
                           onAll={(e) => handleClientAll(client, e)}
                         />
@@ -715,14 +694,14 @@ export default function ClientSelectionModal() {
 
                   {filteredQuotations.length > 0 && (
                     <>
-                      <SectionLabel count={filteredQuotations.length}>Quotations</SectionLabel>
+                      <SectionLabel count={filteredQuotations.length}>Recent 200 Quotations</SectionLabel>
                       {pagedQuotations.map((q, i) => (
                         <SearchQuotationRow
                           key={q.id}
                           quotation={q}
                           index={i}
                           onLoad={(e) => { e.stopPropagation(); handleLoadQuotation(q); }}
-                          onTemplate={(e) => { e.stopPropagation(); loadAsTemplate(q, clients); }}
+                          onTemplate={(e) => { e.stopPropagation(); useClientStore.getState().requestTransition(() => loadAsTemplate(q, clients)); }}
                           onClick={() => handleLoadQuotation(q)}
                         />
                       ))}
@@ -810,6 +789,7 @@ export default function ClientSelectionModal() {
                     key={field}
                     type={type}
                     placeholder={placeholder}
+                    aria-label={placeholder}
                     required={required}
                     value={newClientData[field]}
                     onChange={(e) => setNewClientData((d) => ({ ...d, [field]: e.target.value }))}
@@ -867,6 +847,7 @@ export default function ClientSelectionModal() {
         </div>
       </motion.div>
     </motion.div>
+    </Dialog>
   );
 }
 

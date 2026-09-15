@@ -3,6 +3,10 @@
 *.env.*
 
 # Dependencies
+.venv/
+venv/
+__pycache__/
+*.py[cod]
 node_modules/
 frontend/node_modules/
 
@@ -14,6 +18,9 @@ frontend/src/lib/test.js
 
 # Build output
 frontend/build/
+coverage/
+frontend/playwright-report/
+frontend/test-results/
 
 # OS
 .DS_Store
