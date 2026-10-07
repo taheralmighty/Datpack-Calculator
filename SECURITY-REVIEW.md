@@ -1,6 +1,6 @@
 # Dependency And Deployment Security Review
 
-Review date: 2026-09-14. Next review / exception expiry: **2026-10-14**.
+Review date: 2026-09-14 (advisory re-triage 2026-10-07). Next review / exception expiry: **2026-12-07**.
 
 ## Access Model
 
@@ -19,8 +19,11 @@ The following high chains are time-limited exceptions, not declarations of safet
 | serialize-javascript, rollup-plugin-terser, workbox-build, workbox-webpack-plugin | Build serialization/minification/service-worker tooling; app has no service-worker registration or runtime use of serializer | Breaking override/toolchain replacement is not approved in this hardening pass. Restrict build inputs and CI secrets; schedule maintained toolchain migration. |
 | underscore, jsonpath, bfj | CRA build JSON reporting chain; no direct application import | Compatible update did not remove the parent chain. Avoid untrusted build metadata, review upstream fixes and replace the reporting chain when compatible. |
 | react-scripts | Direct build/dev/test orchestrator, aggregates the above chains | Never expose its dev server publicly. `npm audit fix --force` proposes react-scripts 0.0.0, which is not a valid upgrade. Plan a controlled build-tool migration if upstream cannot resolve the chains. |
+| braces (GHSA-vfj7-8cjw-p6xm) | Build/test file-glob matching via micromatch (Jest, webpack, Tailwind); patterns come from repository config, not user input | Added 2026-10-07. 3.0.3 is the latest release and still affected; no fixed version exists. Re-check for an upstream release. |
+| node-forge (GHSA-86w9-cpqp-85rv) | webpack-dev-server's selfsigned certificate generation for local `npm start` only; no signature verification of external data, not bundled | Added 2026-10-07. 1.4.0 is the latest release and still affected. Removed with the build-tool migration. |
+| webpack-dev-middleware (GHSA-g84c-rxfj-3j2c) | Local CRA dev server only (`npm start`, Playwright); not part of the production build | Added 2026-10-07. The fix requires 7.4.5+, incompatible with CRA's webpack-dev-server 4. Never expose the dev server beyond localhost. |
 
-All other initial high/critical chains, including shell-quote and websocket-driver, were removed by compatible resolved-version updates. Low/moderate findings remain in legacy test/dev-server dependencies (including jsdom/proxy, qs, uuid/sockjs); no runtime exploitability claim is made. The committed audit gate fails on any critical finding, any unreviewed high package, audit transport failure, or expiry of these exceptions. Re-triage advisories even when a package name is already known; package allowance is not a permanent waiver.
+All other initial high/critical chains, including shell-quote and websocket-driver, were removed by compatible resolved-version updates. Low/moderate findings remain in legacy test/dev-server dependencies (including jsdom/proxy, qs, uuid/sockjs); no runtime exploitability claim is made. On 2026-10-07 new advisories were triaged: compatible lockfile updates resolved the critical shell-quote and proxy-addr findings plus brace-expansion, compression and source-map-js; the three no-fix packages above were added. The committed audit gate fails on any critical finding, any unreviewed high package, audit transport failure, or expiry of these exceptions. It judges each package by the advisories filed against it; dependents that only inherit severity are covered by their root package's review. Re-triage advisories even when a package name is already known; package allowance is not a permanent waiver.
 
 ## Python Audit
 
