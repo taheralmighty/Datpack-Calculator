@@ -18,6 +18,14 @@ export const MACHINE_SIZES = {
   size4: { label: 'Size 4', length: 28, width: 40, plateCost: 3000, printPrice: 3500, punchCost: 3000, punchingCostPer1000: 700 },
 };
 
+// Smallest machine (in MACHINE_SIZES order) whose bed fits the master sheet; '' when invalid or oversized.
+export const selectMachineSize = (masterLength, masterWidth) => {
+  const length = Number(masterLength);
+  const width = Number(masterWidth);
+  if (!(Number.isFinite(length) && length > 0 && Number.isFinite(width) && width > 0)) return '';
+  return Object.keys(MACHINE_SIZES).find(key => length <= MACHINE_SIZES[key].length && width <= MACHINE_SIZES[key].width) || '';
+};
+
 export const LAMINATION_OPTIONS = {
   regular_glass: { label: 'Regular - Gloss', rate: 0.4 },
   regular_matte: { label: 'Regular - Matte', rate: 0.5 },
@@ -66,7 +74,7 @@ export const FORMULAS = {
   totalPastingCost: 'Order Quantity × Pasting Rate',
   totalProductionCost: 'Total Paper Cost + Total Print Cost + Total Lamination Cost + Total Foiling Cost + Total UV Cost + Total Punching Cost + Total Pasting Cost',
   costPerUnit: 'Total Production Cost ÷ Order Quantity',
-  sellingPricePerUnit: 'Cost Per Unit ÷ (1 - Desired Profit Margin)',
+  sellingPricePerUnit: 'Cost Per Unit × (1 + Desired Profit Margin)',
   totalQuoteValue: 'Selling Price / Unit × Order Quantity',
   gstAmount: 'Subtotal Quote Value × GST',
   grandTotal: 'Subtotal Quote Value × (1 + GST)',
@@ -287,7 +295,7 @@ export const calcAll = (state = {}) => {
   const gst = n(s.gst);        // decimal e.g. 0.18
 
   const costPerUnit = orderQty > 0 ? safe(totalProductionCost / orderQty) : 0;
-  const sellingPricePerUnit = (1 - margin) > 0 ? safe(costPerUnit / (1 - margin)) : 0;
+  const sellingPricePerUnit = safe(costPerUnit * (1 + margin));
   const totalQuoteValue = safe(sellingPricePerUnit * orderQty);
   const gstAmount = safe(totalQuoteValue * gst);
   const grandTotal = safe(totalQuoteValue * (1 + gst));

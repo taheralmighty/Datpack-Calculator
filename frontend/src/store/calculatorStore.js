@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getDefaultState, migrateState, calcAll } from '../lib/calc';
+import { getDefaultState, migrateState, calcAll, selectMachineSize } from '../lib/calc';
 import { overrideError } from '../lib/validation';
 export { calcAll } from '../lib/calc';
 
@@ -13,6 +13,9 @@ const useCalculatorStore = create((set, get) => ({
   // ─── Setters ──────────────────────────────────────
   setField: (field, value) => set((state) => ({
     [field]: value,
+    ...(field === 'masterLength' || field === 'masterWidth' ? {
+      machineSize: selectMachineSize(field === 'masterLength' ? value : state.masterLength, field === 'masterWidth' ? value : state.masterWidth),
+    } : {}),
     isDirty: true,
     editRevision: state.editRevision + 1,
     ...(state.issueSnapshot && !['issuedAt', 'issueSnapshot'].includes(field) ? { issueSnapshot: null, revisedAt: new Date().toISOString() } : {}),

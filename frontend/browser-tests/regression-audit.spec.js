@@ -49,6 +49,7 @@ test('every rate option, all calculated fields and all overrides survive the rea
   await openSections(page);
   await expect(page.getByTestId('net-sheets')).toContainText('1,250');
   await expect(page.getByTestId('gross-sheets')).toContainText('1,313');
+  await expect(page.getByTestId('machine-size')).toContainText('Size 2');
   const paper = 1313 * 20 * 28 * 300 / 1550000 * 120;
   await expect(page.getByTestId('total-paper-cost')).toContainText(money(paper));
   for (const [label, plate, print, punch, run] of [
@@ -79,7 +80,7 @@ test('every rate option, all calculated fields and all overrides survive the rea
   await choose(page, 'machine-size', 'Size 3'); await choose(page, 'lamination-type', 'Thermal - Matte');
   await choose(page, 'foiling-size', 'Large'); await choose(page, 'pasting-type', 'Envelope');
   const production = paper + 8800 + 5882.24 + 9500 + 8000 + 3700 + 12500;
-  for (const [id, value] of [['production-cost-display', production], ['cost-per-unit-display', production / 5000], ['selling-price-display', production / 5000 / .8], ['subtotal-display', production / .8], ['gst-amount-display', production / .8 * .18], ['final-total-display', production / .8 * 1.18]]) await expect(page.getByTestId(id)).toHaveText(money(value));
+  for (const [id, value] of [['production-cost-display', production], ['cost-per-unit-display', production / 5000], ['selling-price-display', production / 5000 * 1.2], ['subtotal-display', production * 1.2], ['gst-amount-display', production * 1.2 * .18], ['final-total-display', production * 1.2 * 1.18]]) await expect(page.getByTestId(id)).toHaveText(money(value));
   const overrides = [
     ['net-sheets', 'Net Sheets Required', 'netSheets', 1400], ['gross-sheets', 'Gross Sheets Needed', 'grossSheets', 2201],
     ['total-paper-cost', 'Total Paper Cost', 'totalPaperCost', 1111], ['total-print-cost', 'Total Print Cost', 'totalPrintCost', 2222],
@@ -105,7 +106,7 @@ test('every rate option, all calculated fields and all overrides survive the rea
     await expect(page.getByTestId(id)).not.toContainText('Override');
     await save(page);
   }
-  await expect(page.getByTestId('final-total-display')).toHaveText(money(production / .8 * 1.18));
+  await expect(page.getByTestId('final-total-display')).toHaveText(money(production * 1.2 * 1.18));
   await page.getByTestId('margin-input').fill('0'); await page.getByTestId('gst-input').fill('0');
   await expect(page.getByTestId('final-total-display')).toHaveText(money(production));
   expect(runtimeErrors).toEqual([]);
@@ -246,7 +247,7 @@ test('incomplete and invalid numeric input cannot produce downloads', async ({ p
   await expect(page.getByRole('alert')).toContainText('Enter a job name');
   for (const [id, value] of Object.entries(fields)) await page.getByTestId(id).fill(value);
   await openSections(page);
-  for (const [id, value, message] of [['order-qty-input', '-1', 'nonnegative'], ['ups-per-sheet', '0.5', 'whole number'], ['margin-input', '100', 'below 100%']]) {
+  for (const [id, value, message] of [['order-qty-input', '-1', 'nonnegative'], ['ups-per-sheet', '0.5', 'whole number'], ['margin-input', '-5', 'nonnegative']]) {
     const original = await page.getByTestId(id).inputValue();
     await page.getByTestId(id).fill(value);
     await page.getByTestId('export-csv-btn').click();

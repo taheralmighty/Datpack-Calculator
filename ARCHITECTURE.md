@@ -53,13 +53,13 @@ punching = punchCost + numberOfThousands * punchingCostPer1000
 pasting = orderQty * pastingRate
 production = paper + printing + lamination + foiling + UV + punching + pasting
 costPerUnit = production / orderQty
-sellingPricePerUnit = costPerUnit / (1 - margin)
+sellingPricePerUnit = costPerUnit * (1 + margin)
 subtotal = sellingPricePerUnit * orderQty
 GST = subtotal * gst
 grandTotal = subtotal * (1 + gst)
 ```
 
-The five configuration maps live only in calc.js. Number of Thousands is evaluated once. Machine selection also controls Die Cutting. Fixed selected charges and overrides surviving rate/selection changes remain intentional business behavior. Invalid arithmetic has finite guards, but validation explains invalid values instead of treating a zero result as a valid quote.
+The five configuration maps live only in calc.js. Number of Thousands is evaluated once. Machine selection also controls Die Cutting. Master sheet dimension edits auto-select the smallest fitting machine through `selectMachineSize()` in calc.js; the dropdown remains available for a manual choice. Margin is a cost-plus markup with no upper cap. Fixed selected charges and overrides surviving rate/selection changes remain intentional business behavior. Invalid arithmetic has finite guards, but validation explains invalid values instead of treating a zero result as a valid quote.
 
 ## Save And Recovery Lifecycle
 

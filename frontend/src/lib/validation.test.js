@@ -8,9 +8,22 @@ test.each([-1, 0.5, '12bad', NaN, Infinity])('invalid count %s is not exportable
 test('draft missing values and optional empty selections are distinct', () => {
   expect(validateQuote(getDefaultState()).status).toBe('incomplete');
   expect(validateQuote({ ...valid(), margin: 0, gst: 0, paperRate: 0 }).status).toBe('exportable');
-  expect(validateQuote({ ...valid(), margin: 1 }).status).toBe('invalid');
+  expect(validateQuote({ ...valid(), margin: 1 }).status).toBe('exportable');
+  expect(validateQuote({ ...valid(), margin: 20 }).status).toBe('exportable');
+  expect(validateQuote({ ...valid(), margin: -0.1 }).status).toBe('invalid');
   expect(validateQuote({ ...valid(), machineSize: 'unknown' }).status).toBe('invalid');
   expect(validateQuote({ ...valid(), overrides: { totalPaperCost: -1 } }).status).toBe('invalid');
+});
+test.each([[29, 28], [20, 41], ['29', '41']])('oversized %p × %p sheet warns and blocks export but not draft save', (masterLength, masterWidth) => {
+  const result = validateQuote({ ...valid(), masterLength, masterWidth });
+  expect(result.status).toBe('incomplete');
+  expect(result.missing.machineSize).toMatch(/exceeds the largest machine size \(28 × 40 in\)/);
+  expect(() => assertExportable({ ...valid(), masterLength, masterWidth })).toThrow(/largest machine/);
+});
+test('the largest machine boundary and missing dimensions do not raise the oversized warning', () => {
+  expect(validateQuote({ ...valid(), masterLength: 28, masterWidth: 40 }).status).toBe('exportable');
+  expect(validateQuote({ ...valid(), masterLength: 0 }).missing.machineSize).toBeUndefined();
+  expect(validateQuote({ ...valid(), masterWidth: '' }).missing.machineSize).toBeUndefined();
 });
 test.each([0, 0.5, 1, 5, 18, 100])('known legacy percent format converts %s without magnitude guessing', value => {
   const migrated = migrateState({ wastage: value, margin: value, gst: value });

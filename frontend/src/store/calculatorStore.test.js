@@ -33,6 +33,34 @@ test('override edit/reset, zero override and fresh quote state', () => {
   expect(store.getSerializable().machineSize).toBe('');
 });
 
+test('master sheet edits auto-select the smallest fitting machine and drive printing and punching', () => {
+  const store = useCalculatorStore.getState();
+  store.setField('orderQty', 1000);
+  store.setField('upsPerSheet', 4);
+  store.setField('masterLength', '18');
+  expect(useCalculatorStore.getState().machineSize).toBe('');
+  for (const [length, width, machine, plate, punch] of [
+    ['18', '25', 'size1', 1200, 1500], ['20', '28', 'size2', 1500, 2000], ['25', '36', 'size3', 2400, 2500], ['28', '40', 'size4', 3000, 3000],
+  ]) {
+    store.setField('masterLength', length);
+    store.setField('masterWidth', width);
+    expect(useCalculatorStore.getState().machineSize).toBe(machine);
+    expect(store.getCalc().plateCost).toBe(plate);
+    expect(store.getCalc().punchCost).toBe(punch);
+  }
+  store.setField('machineSize', 'size2');
+  expect(useCalculatorStore.getState().machineSize).toBe('size2');
+  store.setField('gsm', '300');
+  expect(useCalculatorStore.getState().machineSize).toBe('size2');
+  store.setField('masterWidth', '41');
+  expect(useCalculatorStore.getState().machineSize).toBe('');
+  expect([store.getCalc().totalPrintCost, store.getCalc().totalDieCuttingCost]).toEqual([0, 0]);
+  store.setField('masterWidth', '');
+  expect(useCalculatorStore.getState().machineSize).toBe('');
+  store.loadState({ pricingModelVersion: 2, masterLength: 20, masterWidth: 28, machineSize: 'size4' });
+  expect(useCalculatorStore.getState().machineSize).toBe('size4');
+});
+
 test('history uses migration and cannot inherit selections from the previous quote', () => {
   useCalculatorStore.getState().setField('machineSize', 'size4');
   useClientStore.getState().loadQuotation({ id: 'old', state: { orderQty: 500, overrides: { upsPerSheet: 2, totalWeight: 12 }, margin: 20 } });

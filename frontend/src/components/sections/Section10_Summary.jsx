@@ -18,7 +18,6 @@ const Summary = ({ completion, calc }) => {
   const { margin, gst, setField } = useCalculatorStore();
   const marginPct = margin * 100;
   const gstPct = gst * 100;
-  const marginWarn = marginPct > 80 ? 'Margin above 80% — is this intentional?' : undefined;
 
   return (
     <SectionCard id="section-10" title="Final Summary & Pricing" index={9} completion={completion}
@@ -33,7 +32,6 @@ const Summary = ({ completion, calc }) => {
               type="number"
               unit="%"
               placeholder="20"
-              error={marginWarn}
               data-testid="margin-input"
             />
             <AnimatedInput

@@ -76,6 +76,9 @@ test('inputs, selections and pencil overrides propagate through the section UI',
   await input('wastage-input', '5');
   expect(useCalculatorStore.getState().platenWastage).toBe(0.05);
   expect(field('gross-sheets').textContent).toContain('1,313');
+  expect(field('machine-size').textContent).toBe('Size 2');
+  expect(field('plate-cost').textContent).toContain('1,500');
+  expect(field('punch-cost').textContent).toContain('2,000');
   await select('machine-size', 'Size 3');
   await select('lamination-type', 'Thermal - Matte');
   await select('foiling-size', 'Large');
@@ -84,7 +87,7 @@ test('inputs, selections and pencil overrides propagate through the section UI',
   expect(field('plate-cost').textContent).toContain('2,400');
   expect(field('punch-cost').textContent).toContain('2,500');
   expect(field('total-pasting-cost').textContent).toContain('12,500');
-  expect(field('final-total-display').textContent).toBe('₹96,553.07');
+  expect(field('final-total-display').textContent).toBe('₹92,690.95');
   await act(async () => Simulate.click(field('gross-sheets').querySelector('[aria-label^="Edit"]')));
   await act(async () => Simulate.change(field('gross-sheets').querySelector('input'), { target: { value: '2201' } }));
   expect(field('number-of-thousands').textContent).toContain('3');

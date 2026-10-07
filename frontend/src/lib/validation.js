@@ -1,4 +1,4 @@
-import { MACHINE_SIZES, LAMINATION_OPTIONS, FOILING_SIZES, UV_OPTIONS, PASTING_OPTIONS, MODEL_VERSION } from './calc';
+import { MACHINE_SIZES, LAMINATION_OPTIONS, FOILING_SIZES, UV_OPTIONS, PASTING_OPTIONS, MODEL_VERSION, selectMachineSize } from './calc';
 
 const counts = new Set(['orderQty', 'upsPerSheet', 'netSheets', 'grossSheets']);
 const selections = { machineSize: MACHINE_SIZES, laminationType: LAMINATION_OPTIONS, foilingSize: FOILING_SIZES, uvType: UV_OPTIONS, pastingType: PASTING_OPTIONS };
@@ -23,7 +23,6 @@ export function validateQuote(state) {
     const error = overrideError(key, value);
     if (error) errors[key] = error;
   }
-  if (validNumber(state.margin) && Number(state.margin) >= 1) errors.margin = 'Profit margin must be below 100%.';
   for (const key of ['gst', 'platenWastage']) {
     if (validNumber(state[key]) && Number(state[key]) > 1) errors[key] = `${key}: enter a percentage between 0 and 100.`;
   }
@@ -37,6 +36,12 @@ export function validateQuote(state) {
   if (state.pricingModelVersion > MODEL_VERSION) errors.version = 'This quotation uses a newer, unsupported pricing model.';
   for (const key of ['orderQty', 'upsPerSheet', 'masterLength', 'masterWidth', 'gsm']) {
     if (!errors[key] && !(Number(state[key]) > 0)) missing[key] = `${key}: enter a value greater than zero.`;
+  }
+  if (!errors.masterLength && !errors.masterWidth && !missing.masterLength && !missing.masterWidth &&
+    !selectMachineSize(state.masterLength, state.masterWidth)) {
+    const sizes = Object.values(MACHINE_SIZES);
+    const largest = sizes[sizes.length - 1];
+    missing.machineSize = `Master sheet exceeds the largest machine size (${largest.length} × ${largest.width} in); no machine can be selected.`;
   }
   if (!String(state.jobName || '').trim()) missing.jobName = 'Enter a job name.';
   if (state.migrationReview?.required) missing.migration = 'Review and acknowledge the legacy quotation before issuing a revision.';
